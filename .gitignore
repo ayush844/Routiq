@@ -1,0 +1,38 @@
+# dependencies
+node_modules
+.pnpm-store
+
+# turbo
+.turbo
+
+# build output
+dist
+build
+coverage
+
+# env files
+.env
+.env.local
+.env.*.local
+
+# logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS
+.DS_Store
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.vscode
+.idea
+
+# misc
+tmp
+temp
