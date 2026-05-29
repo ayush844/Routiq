@@ -7,9 +7,12 @@
   },
   "dependencies": {
     "@routiq/shared": "workspace:*",
+    "dotenv": "^17.4.2",
+    "jsonwebtoken": "^9.0.3",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/ws": "^8.18.1"
   }
 }
