@@ -23,4 +23,5 @@ export interface TunnelCreatedMessage {
   type: "TUNNEL_CREATED"
   tunnelId: string
   url: string
+  port: number
 }

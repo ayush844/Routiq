@@ -1,6 +1,6 @@
 import WebSocket from "ws"
 import dotenv from "dotenv"
-import {AuthMessage, AuthSuccessMessage} from "@routiq/shared"
+import {AuthMessage, AuthSuccessMessage, CreateTunnelMessage, TunnelCreatedMessage} from "@routiq/shared"
 
 dotenv.config()
 
@@ -13,6 +13,8 @@ if (!TOKEN) {
     "AGENT_TOKEN is missing"
   )
 }
+
+const tunnels = new Map<string, number>();
 
 function connect() {
   console.log(`Connecting to ${RELAY_URL}...`)
@@ -41,6 +43,15 @@ function connect() {
           const authSuccess = message as AuthSuccessMessage
 
           console.log(`Authenticated as ${authSuccess.userId}`)
+
+            const createTunnelMessage: CreateTunnelMessage = {
+                type: "CREATE_TUNNEL",
+                localPort: 3000,
+                protocol: "http"
+            }
+
+            ws.send(JSON.stringify(createTunnelMessage));
+
           break
         }
 
@@ -48,6 +59,13 @@ function connect() {
           console.log("Authentication failed")
           ws.close()
           break
+
+        case "TUNNEL_CREATED":
+            const tunnel = message as TunnelCreatedMessage;
+            tunnels.set(tunnel.tunnelId, tunnel.port);
+            console.log(`${tunnel.tunnelId} Tunnel created: ${tunnel.url} -> localhost:${tunnel.port}`);
+
+            break;
 
         default:
           console.log("Unknown message:", message)
@@ -63,7 +81,7 @@ function connect() {
 
   ws.on("close", () => {
     console.log("Disconnected from relay")
-
+    tunnels.clear()
     setTimeout(() => {
       console.log("Attempting to reconnect...")
 
