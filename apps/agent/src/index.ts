@@ -76,7 +76,18 @@ function connect() {
             const httpRequest = message as HttpRequestMessage
             const port = tunnels.get(httpRequest.tunnelId)
 
-            const response = await fetch(`http://localhost:${port}${httpRequest.path}`)
+            const options: RequestInit = {
+              method: httpRequest.method,
+              headers: httpRequest.headers
+            }
+
+            if (httpRequest.method !== "GET" && httpRequest.method !== "HEAD") {
+              options.body = httpRequest.body
+            }
+
+            const response = await fetch(`http://localhost:${port}${httpRequest.path}`,
+              options
+            )
             const body = await response.text()
 
             const httpResponse: HttpResponseMessage = {

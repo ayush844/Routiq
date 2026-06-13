@@ -62,7 +62,6 @@ const pendingRequests = new Map<string, PendingRequest>()
 
 const app = Fastify()
 
-
 function validateToken(token: string): JwtPayload | null {
   try {
     const decoded = jwt.verify(token, TOKEN_SECRET!)
@@ -311,9 +310,14 @@ const handler = async (req: any, reply: any) => {
   }
   console.log(`Received request for tunnel ${req.params.tunnelId}`)
   console.log(`req url is ${req.url}`)
-  const path = "/" + (req.params["*"] ?? "")
+  // const path = "/" + (req.params["*"] ?? "")
+
+  const path = req.url.replace(`/test/${req.params.tunnelId}`, "") || "/"
 
   const ws = tunnel.ws;
+
+  console.log("req body in relay is: ", req.body)
+  const body = req.body ? JSON.stringify(req.body) : undefined;
 
   // reply.hijack();
 
@@ -332,6 +336,7 @@ const handler = async (req: any, reply: any) => {
 
       headers: req.headers,
 
+      body
     })
   )
 
