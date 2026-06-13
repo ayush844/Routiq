@@ -1,6 +1,6 @@
 import WebSocket from "ws"
 import dotenv from "dotenv"
-import {AuthMessage, AuthSuccessMessage, CreateTunnelMessage, TunnelCreatedMessage} from "@routiq/shared"
+import {AuthMessage, AuthSuccessMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, TunnelCreatedMessage} from "@routiq/shared"
 
 dotenv.config()
 
@@ -32,7 +32,7 @@ function connect() {
     ws.send(JSON.stringify(authMessage))
   })
 
-  ws.on("message", (data) => {
+  ws.on("message", async (data) => {
     try {
       const message = JSON.parse(
         data.toString()
@@ -60,12 +60,56 @@ function connect() {
           ws.close()
           break
 
-        case "TUNNEL_CREATED":
-            const tunnel = message as TunnelCreatedMessage;
-            tunnels.set(tunnel.tunnelId, tunnel.port);
-            console.log(`${tunnel.tunnelId} Tunnel created: ${tunnel.url} -> localhost:${tunnel.port}`);
+        case "TUNNEL_CREATED": {
+          const tunnel = message as TunnelCreatedMessage;
+          tunnels.set(tunnel.tunnelId, tunnel.port);
+          console.log(`${tunnel.tunnelId} Tunnel created: ${tunnel.url} -> localhost:${tunnel.port}`);
 
-            break;
+          break;
+        }
+
+        case "HTTP_REQUEST": {
+          console.log("Received HTTP request:", message)
+
+          try {
+
+            const httpRequest = message as HttpRequestMessage
+            const port = tunnels.get(httpRequest.tunnelId)
+
+            const response = await fetch(`http://localhost:${port}${httpRequest.path}`)
+            const body = await response.text()
+
+            const httpResponse: HttpResponseMessage = {
+              type: "HTTP_RESPONSE",
+
+              requestId:
+                message.requestId,
+
+              status:
+                response.status,
+
+              headers:
+                Object.fromEntries(
+                  response.headers
+                ),
+
+              body
+            }
+
+            ws.send(JSON.stringify(httpResponse))
+            
+          } catch (error) {
+            ws.send(JSON.stringify({
+              type: "HTTP_RESPONSE",
+              requestId: message.requestId,
+              status: 502,
+              headers: {},
+              body: "Internal Server Error"
+            }))
+          }
+
+          break;
+        }
 
         default:
           console.log("Unknown message:", message)

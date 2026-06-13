@@ -7,6 +7,8 @@ import {
   AuthSuccessMessage,
   CreateTunnelMessage
 } from "@routiq/shared"
+import Fastify, { FastifyReply, FastifyRequest } from "fastify"
+
 
 dotenv.config()
 
@@ -40,9 +42,26 @@ type Tunnel = {
   ws: WebSocket
 }
 
+type TunnelParams = {
+  tunnelId: string
+  "*": string
+}
+
+type PendingRequest = {
+  reply: FastifyReply
+  timeout: NodeJS.Timeout
+  createdAt: number
+}
+
 const tunnels = new Map<string,Tunnel>()
 
 const subdomainToTunnelId = new Map<string, string>()
+
+const pendingRequests = new Map<string, PendingRequest>()
+
+
+const app = Fastify()
+
 
 function validateToken(token: string): JwtPayload | null {
   try {
@@ -182,6 +201,35 @@ wss.on("connection", (ws) => {
             break
         }
 
+        case "HTTP_RESPONSE": {
+          console.log("Received HTTP_RESPONSE", message)
+          const pendingRequest = pendingRequests.get(message.requestId);
+          if(!pendingRequest) {
+            console.error(`No pending request found for requestId ${message.requestId}`);
+            return;
+          }
+
+          clearTimeout(pendingRequest.timeout)
+
+          pendingRequest.reply.status(message.status).headers(message.headers).send(message.body);
+
+          pendingRequests.delete(message.requestId)
+
+
+          // setTimeout(() => {
+          //   const reply = pendingRequests.get(message.requestId)
+
+          //   if (!reply) return
+
+          //   reply
+          //     .status(504)
+          //     .send("Tunnel timeout")
+
+          //     pendingRequests.delete(message.requestId)
+          //   }, 30000)
+          break;
+        }
+
         default: {
           if (!client.authenticated) {
 
@@ -235,3 +283,65 @@ wss.on("connection", (ws) => {
 })
 
 console.log("Relay running on ws://localhost:8080")
+
+
+const handler = async (req: any, reply: any) => {
+  const requestId = randomUUID()
+
+  const timeout = setTimeout(() => {
+    const pending = pendingRequests.get(requestId)
+
+    if (!pending) return
+
+    pending.reply.status(504).send("Tunnel timeout")
+
+    pendingRequests.delete(requestId)
+  }, 30000)
+
+  pendingRequests.set(requestId, {
+    reply,
+    timeout,
+    createdAt: Date.now()
+  })
+
+  const tunnel = tunnels.get(req.params.tunnelId);
+  if(!tunnel) {
+    reply.status(404).send("Tunnel not found");
+    return;
+  }
+  console.log(`Received request for tunnel ${req.params.tunnelId}`)
+  console.log(`req url is ${req.url}`)
+  const path = "/" + (req.params["*"] ?? "")
+
+  const ws = tunnel.ws;
+
+  // reply.hijack();
+
+  ws.send(
+    JSON.stringify({
+      type: "HTTP_REQUEST",
+
+      requestId,
+
+      tunnelId: tunnel.tunnelId,
+
+      method: req.method,
+
+      path: path,
+      // path: req.url,
+
+      headers: req.headers,
+
+    })
+  )
+
+  return reply;
+}
+
+app.all<{Params: TunnelParams;}>("/test/:tunnelId", handler);
+
+app.all<{Params: TunnelParams;}>("/test/:tunnelId/*", handler);
+
+await app.listen({
+  port: 3001
+})

@@ -25,3 +25,21 @@ export interface TunnelCreatedMessage {
   url: string
   port: number
 }
+
+export interface HttpRequestMessage{
+  type: "HTTP_REQUEST",
+  requestId: string,
+  tunnelId: string,
+  method: string,
+  path: string,
+  headers: Record<string, string>,
+  body?: string
+}
+
+export interface HttpResponseMessage {
+  type: "HTTP_RESPONSE",
+  requestId: string,
+  status: number,
+  headers: Record<string, string>,
+  body?: string
+}
