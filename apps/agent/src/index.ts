@@ -76,9 +76,34 @@ function connect() {
             const httpRequest = message as HttpRequestMessage
             const port = tunnels.get(httpRequest.tunnelId)
 
+            if (!port) {
+
+              const httpResponse: HttpResponseMessage = {
+                type: "HTTP_RESPONSE",
+                requestId: httpRequest.requestId,
+                status: 404,
+                headers: {},
+                body: "Tunnel not found"
+              }
+
+              ws.send(
+                JSON.stringify(httpResponse)
+              )
+
+              break
+            }
+
+            const headers = {
+              ...httpRequest.headers
+            }
+
+            delete headers.host
+            delete headers.connection
+            delete headers["content-length"]
+
             const options: RequestInit = {
               method: httpRequest.method,
-              headers: httpRequest.headers
+              headers
             }
 
             if (httpRequest.method !== "GET" && httpRequest.method !== "HEAD") {
@@ -110,13 +135,16 @@ function connect() {
             ws.send(JSON.stringify(httpResponse))
             
           } catch (error) {
-            ws.send(JSON.stringify({
+
+            const errResponse: HttpResponseMessage = {
               type: "HTTP_RESPONSE",
               requestId: message.requestId,
               status: 502,
               headers: {},
               body: "Internal Server Error"
-            }))
+            }
+
+            ws.send(JSON.stringify(errResponse))
           }
 
           break;

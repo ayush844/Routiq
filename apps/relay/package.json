@@ -6,6 +6,7 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@fastify/formbody": "^8.0.2",
     "@routiq/shared": "workspace:*",
     "dotenv": "^17.4.2",
     "fastify": "^5.8.5",
