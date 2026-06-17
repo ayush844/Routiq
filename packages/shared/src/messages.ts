@@ -43,3 +43,11 @@ export interface HttpResponseMessage {
   headers: Record<string, string>,
   body?: string
 }
+
+export interface PingMessage {
+  type: "PING"
+}
+
+export interface PongMessage {
+  type: "PONG"
+}

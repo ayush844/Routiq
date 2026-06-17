@@ -5,9 +5,11 @@ import { randomUUID } from "crypto"
 import {
   AuthMessage,
   AuthSuccessMessage,
-  CreateTunnelMessage
+  CreateTunnelMessage,
+  PingMessage
 } from "@routiq/shared"
 import Fastify, { FastifyReply, FastifyRequest } from "fastify"
+import { request } from "http"
 
 
 dotenv.config()
@@ -31,6 +33,7 @@ type ClientState = {
     authenticated: boolean
     user?: JwtPayload
     tunnelIds: string[]
+    lastPongAt: number
 }
 
 type Tunnel = {
@@ -59,6 +62,9 @@ const subdomainToTunnelId = new Map<string, string>()
 
 const pendingRequests = new Map<string, PendingRequest>()
 
+const ping:PingMessage = {
+  type: "PING"
+}
 
 const app = Fastify()
 
@@ -86,12 +92,29 @@ function validateToken(token: string): JwtPayload | null {
 }
 
 wss.on("connection", (ws) => {
-  console.log("Client connected")
+  console.log("Client connected");
 
   const client: ClientState = {
     authenticated: false,
-    tunnelIds: []
+    tunnelIds: [],
+    lastPongAt: Date.now()
   }
+
+  const healthBeatInterval = setInterval(() => {
+
+    ws.send(
+      JSON.stringify(ping)
+    )
+  }, 30000)
+
+  const healthCheckInterval = setInterval(() => {
+    const age = Date.now() - client.lastPongAt;
+    if(age > 60000){
+      console.log(`Heartbeat timeout for ${client.user?.userId}`)
+
+      ws.terminate()
+    }
+  }, 10000)
 
   ws.on("message", (data) => {
     try {
@@ -197,6 +220,8 @@ wss.on("connection", (ws) => {
 
             console.log(`Subdomain: ${subdomain}`)
 
+            console.log(`Test URL: http://${subdomain}.localhost:3001`)
+
             break
         }
 
@@ -227,6 +252,13 @@ wss.on("connection", (ws) => {
           //     pendingRequests.delete(message.requestId)
           //   }, 30000)
           break;
+        }
+
+        case "PONG": {
+          client.lastPongAt = Date.now()
+          console.log(`PONG from ${client.user?.userId}`)
+
+          break
         }
 
         default: {
@@ -262,6 +294,9 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
 
+    clearInterval(healthBeatInterval);
+    clearInterval(healthCheckInterval);
+
     for (const tunnelId of client.tunnelIds) {
         subdomainToTunnelId.delete(tunnels.get(tunnelId)!.subdomain);
         tunnels.delete(tunnelId);
@@ -284,7 +319,11 @@ wss.on("connection", (ws) => {
 console.log("Relay running on ws://localhost:8080")
 
 
-const handler = async (req: any, reply: any) => {
+async function forwardRequest(
+  tunnel: Tunnel,
+  req: any,
+  reply: any
+) {
   const requestId = randomUUID()
 
   const timeout = setTimeout(() => {
@@ -303,23 +342,14 @@ const handler = async (req: any, reply: any) => {
     createdAt: Date.now()
   })
 
-  const tunnel = tunnels.get(req.params.tunnelId);
-  if(!tunnel) {
-    reply.status(404).send("Tunnel not found");
-    return;
-  }
-  console.log(`Received request for tunnel ${req.params.tunnelId}`)
-  console.log(`req url is ${req.url}`)
-  // const path = "/" + (req.params["*"] ?? "")
-
-  const path = req.url.replace(`/test/${req.params.tunnelId}`, "") || "/"
+  // const path = req.url;
+  const path = req.params?.tunnelId ? req.url.replace(`/test/${req.params.tunnelId}`,"") || "/" : req.url
 
   const ws = tunnel.ws;
 
   console.log("req body in relay is: ", req.body)
   const body = req.body ? JSON.stringify(req.body) : undefined;
 
-  // reply.hijack();
 
   ws.send(
     JSON.stringify({
@@ -341,11 +371,62 @@ const handler = async (req: any, reply: any) => {
   )
 
   return reply;
+
+}
+
+
+const handler = async (req: any, reply: any) => {
+
+  const tunnel = tunnels.get(req.params.tunnelId);
+  if(!tunnel) {
+    reply.status(404).send("Tunnel not found");
+    return;
+  }
+  console.log(`Received request for tunnel ${req.params.tunnelId}`)
+  console.log(`req url is ${req.url}`)
+
+  return forwardRequest(
+    tunnel,
+    req,
+    reply
+  )
 }
 
 app.all<{Params: TunnelParams;}>("/test/:tunnelId", handler);
 
 app.all<{Params: TunnelParams;}>("/test/:tunnelId/*", handler);
+
+app.all("/*", async (req, reply) => {
+  const host = req.headers.host;
+  console.log("host is >>", host);
+
+  if (!host) {
+    return reply
+      .status(400)
+      .send("Host header missing")
+  }
+  const subdomain = host?.split(".")[0];
+  console.log("subdomain is: ",subdomain);
+
+  const tunnelId = subdomainToTunnelId.get(subdomain!)
+
+  if (!tunnelId) {
+    return reply
+      .status(404)
+      .send("Subdomain not found")
+  }
+
+  const tunnel = tunnels.get(tunnelId)
+
+  if (!tunnel) {
+    return reply
+      .status(404)
+      .send("Tunnel not found")
+  }
+
+  return forwardRequest(tunnel, req, reply);
+})
+
 
 await app.listen({
   port: 3001

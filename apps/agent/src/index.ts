@@ -1,10 +1,14 @@
 import WebSocket from "ws"
 import dotenv from "dotenv"
-import {AuthMessage, AuthSuccessMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, TunnelCreatedMessage} from "@routiq/shared"
+import {AuthMessage, AuthSuccessMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, PongMessage, TunnelCreatedMessage} from "@routiq/shared"
 
 dotenv.config()
 
 const RELAY_URL = process.env.RELAY_URL || "ws://localhost:8080"
+
+const pong:PongMessage = {
+  type: "PONG"
+}
 
 const TOKEN = process.env.AGENT_TOKEN
 
@@ -147,6 +151,11 @@ function connect() {
             ws.send(JSON.stringify(errResponse))
           }
 
+          break;
+        }
+
+        case "PING": {
+          ws.send(JSON.stringify(pong));
           break;
         }
 
