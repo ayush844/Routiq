@@ -13,6 +13,8 @@ if (!TOKEN) {
   )
 }
 
+let reconnectDelay = 2000
+
 function connect() {
   console.log(`Connecting to ${RELAY_URL}...`)
 
@@ -126,11 +128,14 @@ function connect() {
   ws.on("close", () => {
     console.log("Disconnected from relay")
     tunnels.clear()
+    console.log(`Reconnecting in ${reconnectDelay / 1000}s`)
     setTimeout(() => {
       console.log("Attempting to reconnect...")
 
       connect()
-    }, 2000)
+    }, reconnectDelay);
+
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
   })
 }
 
