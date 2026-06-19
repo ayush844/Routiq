@@ -1,24 +1,17 @@
 import WebSocket from "ws"
-import dotenv from "dotenv"
 import {AuthMessage, AuthSuccessMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, PongMessage, TunnelCreatedMessage} from "@routiq/shared"
+import { tunnels } from "./stores/tunnels.js"
+import {RELAY_URL, TOKEN} from "./config/env.js"
+import { handleHttpRequest } from "./services/local-request.service.js"
+import {pong} from "./handlers/ping.handler.js"
+import { createAuthMessage } from "./handlers/auth.handler.js"
 
-dotenv.config()
-
-const RELAY_URL = process.env.RELAY_URL || "ws://localhost:8080"
-
-const pong:PongMessage = {
-  type: "PONG"
-}
-
-const TOKEN = process.env.AGENT_TOKEN
 
 if (!TOKEN) {
   throw new Error(
     "AGENT_TOKEN is missing"
   )
 }
-
-const tunnels = new Map<string, number>();
 
 function connect() {
   console.log(`Connecting to ${RELAY_URL}...`)
@@ -28,12 +21,7 @@ function connect() {
   ws.on("open", () => {
     console.log("Connected to relay server")
 
-    const authMessage: AuthMessage = {
-      type: "AUTH",
-      token: TOKEN!
-    }
-
-    ws.send(JSON.stringify(authMessage))
+    ws.send(JSON.stringify(createAuthMessage(TOKEN!)))
   })
 
   ws.on("message", async (data) => {
@@ -96,45 +84,9 @@ function connect() {
 
               break
             }
-
-            const headers = {
-              ...httpRequest.headers
-            }
-
-            delete headers.host
-            delete headers.connection
-            delete headers["content-length"]
-
-            const options: RequestInit = {
-              method: httpRequest.method,
-              headers
-            }
-
-            if (httpRequest.method !== "GET" && httpRequest.method !== "HEAD") {
-              options.body = httpRequest.body
-            }
-
-            const response = await fetch(`http://localhost:${port}${httpRequest.path}`,
-              options
+            const httpResponse = await handleHttpRequest(
+              httpRequest, port
             )
-            const body = await response.text()
-
-            const httpResponse: HttpResponseMessage = {
-              type: "HTTP_RESPONSE",
-
-              requestId:
-                message.requestId,
-
-              status:
-                response.status,
-
-              headers:
-                Object.fromEntries(
-                  response.headers
-                ),
-
-              body
-            }
 
             ws.send(JSON.stringify(httpResponse))
             

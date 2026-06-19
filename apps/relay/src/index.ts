@@ -2,10 +2,12 @@ import { WebSocketServer, WebSocket } from "ws"
 import dotenv from "dotenv"
 import { randomUUID } from "crypto"
 import {
+  AuthFailedMessage,
   AuthMessage,
   AuthSuccessMessage,
   CreateTunnelMessage,
-  PingMessage
+  PingMessage,
+  TunnelCreatedMessage
 } from "@routiq/shared"
 import Fastify from "fastify"
 import { ClientState, Tunnel, TunnelParams } from "./types/relay.js"
@@ -13,10 +15,9 @@ import { subdomainToTunnelId, tunnels } from "./stores/tunnels.js"
 import { pendingRequests } from "./stores/requests.js"
 import { validateToken } from "./services/auth.service.js"
 import { forwardRequest } from "./http/forward-request.js"
+import { TOKEN_SECRET } from "./config/env.js"
 
 dotenv.config()
-
-const TOKEN_SECRET = process.env.TOKEN_SECRET
 
 if (!TOKEN_SECRET) {
     throw new Error("TOKEN_SECRET is missing")
@@ -69,17 +70,17 @@ wss.on("connection", (ws) => {
           const authMessage = message as AuthMessage
 
           const user = validateToken(
-            authMessage.token, TOKEN_SECRET
+            authMessage.token, TOKEN_SECRET!
           )
 
           if (!user) {
             console.log("hello1")
+            const authFailed:AuthFailedMessage = {
+              type: "AUTH_FAILED",
+              reason: "Invalid token"
+            }
             ws.send(
-              JSON.stringify({
-                type: "AUTH_FAILED",
-                reason:
-                  "Invalid token"
-              })
+              JSON.stringify(authFailed)
             )
 
             setTimeout(() => {
@@ -111,18 +112,19 @@ wss.on("connection", (ws) => {
 
         case "CREATE_TUNNEL": {
             if (!client.authenticated) {
-                ws.send(
-                    JSON.stringify({
-                        type: "AUTH_FAILED",
-                        reason:
-                        "Invalid token"
-                    })
-                )
+              
+              const authFailed:AuthFailedMessage = {
+                type: "AUTH_FAILED",
+                reason: "Invalid token"
+              }
+              ws.send(
+                  JSON.stringify(authFailed)
+              )
 
-                setTimeout(() => {
-                  ws.close()
-                }, 100)
-                return
+              setTimeout(() => {
+                ws.close()
+              }, 100)
+              return
             }
 
             const tunnelId = `tun_${randomUUID()}`.replaceAll("-","").slice(0, 16);
@@ -145,13 +147,16 @@ wss.on("connection", (ws) => {
 
             client.tunnelIds.push(tunnelId);
 
+
+            const tunnelCreated: TunnelCreatedMessage = {
+              type: "TUNNEL_CREATED",
+              tunnelId,
+              url: `${subdomain}.routiq.dev`,
+              port: tunnel.localPort
+            }
+
             ws.send(
-                JSON.stringify({
-                    type: "TUNNEL_CREATED",
-                    tunnelId,
-                    url: `${subdomain}.routiq.dev`,
-                    port: tunnel.localPort
-                })
+              JSON.stringify(tunnelCreated)
             );
 
             console.log(`Tunnel created: ${tunnelId}`)
@@ -203,13 +208,12 @@ wss.on("connection", (ws) => {
 
         default: {
           if (!client.authenticated) {
-
+            const authFailed:AuthFailedMessage = {
+              type: "AUTH_FAILED",
+              reason: "Invalid token"
+            }
             ws.send(
-              JSON.stringify({
-                type: "AUTH_FAILED",
-                reason:
-                  "Invalid token"
-              })
+              JSON.stringify(authFailed)
             )
 
             setTimeout(() => {
