@@ -1,6 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws"
 import dotenv from "dotenv"
-import jwt from "jsonwebtoken"
 import { randomUUID } from "crypto"
 import {
   AuthMessage,
@@ -8,9 +7,12 @@ import {
   CreateTunnelMessage,
   PingMessage
 } from "@routiq/shared"
-import Fastify, { FastifyReply, FastifyRequest } from "fastify"
-import { request } from "http"
-
+import Fastify from "fastify"
+import { ClientState, Tunnel, TunnelParams } from "./types/relay.js"
+import { subdomainToTunnelId, tunnels } from "./stores/tunnels.js"
+import { pendingRequests } from "./stores/requests.js"
+import { validateToken } from "./services/auth.service.js"
+import { forwardRequest } from "./http/forward-request.js"
 
 dotenv.config()
 
@@ -24,72 +26,12 @@ const wss = new WebSocketServer({
     port: 8080
 })
 
-type JwtPayload = {
-    userId: string
-    role: string
-}
-
-type ClientState = {
-    authenticated: boolean
-    user?: JwtPayload
-    tunnelIds: string[]
-    lastPongAt: number
-}
-
-type Tunnel = {
-  tunnelId: string
-  subdomain: string
-  localPort: number
-  protocol: "http" | "tcp"
-  ownerId: string
-  ws: WebSocket
-}
-
-type TunnelParams = {
-  tunnelId: string
-  "*": string
-}
-
-type PendingRequest = {
-  reply: FastifyReply
-  timeout: NodeJS.Timeout
-  createdAt: number
-}
-
-const tunnels = new Map<string,Tunnel>()
-
-const subdomainToTunnelId = new Map<string, string>()
-
-const pendingRequests = new Map<string, PendingRequest>()
 
 const ping:PingMessage = {
   type: "PING"
 }
 
 const app = Fastify()
-
-function validateToken(token: string): JwtPayload | null {
-  try {
-    const decoded = jwt.verify(token, TOKEN_SECRET!)
-
-    if (
-      typeof decoded === "object" &&
-      "userId" in decoded &&
-      "role" in decoded
-    ) {
-      return decoded as JwtPayload
-    }
-
-    return null
-  } catch (error) {
-    console.error(
-      "Token verification failed:",
-      error
-    )
-
-    return null
-  }
-}
 
 wss.on("connection", (ws) => {
   console.log("Client connected");
@@ -124,13 +66,11 @@ wss.on("connection", (ws) => {
 
       switch (message.type) {
         case "AUTH": {
-          const authMessage =
-            message as AuthMessage
+          const authMessage = message as AuthMessage
 
-          const user =
-            validateToken(
-              authMessage.token
-            )
+          const user = validateToken(
+            authMessage.token, TOKEN_SECRET
+          )
 
           if (!user) {
             console.log("hello1")
@@ -317,62 +257,6 @@ wss.on("connection", (ws) => {
 })
 
 console.log("Relay running on ws://localhost:8080")
-
-
-async function forwardRequest(
-  tunnel: Tunnel,
-  req: any,
-  reply: any
-) {
-  const requestId = randomUUID()
-
-  const timeout = setTimeout(() => {
-    const pending = pendingRequests.get(requestId)
-
-    if (!pending) return
-
-    pending.reply.status(504).send("Tunnel timeout")
-
-    pendingRequests.delete(requestId)
-  }, 30000)
-
-  pendingRequests.set(requestId, {
-    reply,
-    timeout,
-    createdAt: Date.now()
-  })
-
-  // const path = req.url;
-  const path = req.params?.tunnelId ? req.url.replace(`/test/${req.params.tunnelId}`,"") || "/" : req.url
-
-  const ws = tunnel.ws;
-
-  console.log("req body in relay is: ", req.body)
-  const body = req.body ? JSON.stringify(req.body) : undefined;
-
-
-  ws.send(
-    JSON.stringify({
-      type: "HTTP_REQUEST",
-
-      requestId,
-
-      tunnelId: tunnel.tunnelId,
-
-      method: req.method,
-
-      path: path,
-      // path: req.url,
-
-      headers: req.headers,
-
-      body
-    })
-  )
-
-  return reply;
-
-}
 
 
 const handler = async (req: any, reply: any) => {
