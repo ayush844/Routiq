@@ -6,6 +6,11 @@ import {
   AuthMessage,
   AuthSuccessMessage,
   CreateTunnelMessage,
+  HttpRequestMessage,
+  HttpResponseChunkMessage,
+  HttpResponseEndMessage,
+  HttpResponseMessage,
+  HttpResponseStartMessage,
   PingMessage,
   TunnelCreatedMessage
 } from "@routiq/shared"
@@ -196,6 +201,78 @@ wss.on("connection", (ws) => {
 
           //     pendingRequests.delete(message.requestId)
           //   }, 30000)
+          break;
+        }
+
+        case "HTTP_RESPONSE_START": {
+          let httpMessage = message as HttpResponseStartMessage
+          const pendingRequest = pendingRequests.get(httpMessage.requestId);
+
+          if(!pendingRequest){
+            console.error(`no pending request found for ${httpMessage.requestId}`);
+            return;
+          }
+
+          pendingRequest.reply.status(httpMessage.status).headers(httpMessage.headers);
+
+          break;
+
+        }
+
+        case "HTTP_RESPONSE_CHUNK": {
+
+          let httpMessage = message as HttpResponseChunkMessage;
+          const pendingRequest = pendingRequests.get(httpMessage.requestId);
+
+          if(!pendingRequest){
+            return;
+          }
+
+          clearTimeout(
+            pendingRequest.timeout
+          )
+
+          pendingRequest.timeout = setTimeout(()=>{
+
+            const pending = pendingRequests.get(
+              httpMessage.requestId
+            )
+
+            if (!pending) return
+
+            pending.reply.status(504).send("Tunnel timeout")
+
+            pendingRequests.delete(
+              httpMessage.requestId
+            )
+
+          }, 30000)
+
+          pendingRequest.reply.raw.write(
+            Buffer.from(
+              httpMessage.chunk,
+              "base64"
+            )
+          )
+
+          break;
+
+        }
+
+        case "HTTP_RESPONSE_END": {
+          let httpMessage = message as HttpResponseEndMessage;
+          const pendingRequest = pendingRequests.get(httpMessage.requestId);
+
+          if(!pendingRequest){
+            return;
+          }
+
+          clearTimeout(pendingRequest.timeout);
+
+          pendingRequest.reply.raw.end();
+
+          pendingRequests.delete(httpMessage.requestId);
+
           break;
         }
 

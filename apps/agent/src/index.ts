@@ -5,6 +5,7 @@ import {RELAY_URL, TOKEN} from "./config/env.js"
 import { handleHttpRequest } from "./services/local-request.service.js"
 import {pong} from "./handlers/ping.handler.js"
 import { createAuthMessage } from "./handlers/auth.handler.js"
+import {createTunnel} from "./handlers/tunnel.handler.js"
 
 
 if (!TOKEN) {
@@ -15,12 +16,15 @@ if (!TOKEN) {
 
 let reconnectDelay = 2000
 
+const PORTS = [3000, 5173]
+
 function connect() {
   console.log(`Connecting to ${RELAY_URL}...`)
 
   const ws = new WebSocket(RELAY_URL)
 
   ws.on("open", () => {
+    reconnectDelay = 2000
     console.log("Connected to relay server")
 
     ws.send(JSON.stringify(createAuthMessage(TOKEN!)))
@@ -38,13 +42,12 @@ function connect() {
 
           console.log(`Authenticated as ${authSuccess.userId}`)
 
-            const createTunnelMessage: CreateTunnelMessage = {
-                type: "CREATE_TUNNEL",
-                localPort: 3000,
-                protocol: "http"
-            }
+          // createTunnel(ws, 3000)
+          // createTunnel(ws, 5173)
 
-            ws.send(JSON.stringify(createTunnelMessage));
+          for (const port of PORTS) {
+            createTunnel(ws, port)
+          }
 
           break
         }
@@ -86,12 +89,12 @@ function connect() {
 
               break
             }
-            const httpResponse = await handleHttpRequest(
-              httpRequest, port
+
+            console.log("HELLLLLLL")
+            await handleHttpRequest(
+              httpRequest, port, ws
             )
 
-            ws.send(JSON.stringify(httpResponse))
-            
           } catch (error) {
 
             const errResponse: HttpResponseMessage = {

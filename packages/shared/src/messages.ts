@@ -51,3 +51,21 @@ export interface PingMessage {
 export interface PongMessage {
   type: "PONG"
 }
+
+export interface HttpResponseStartMessage {
+  type: "HTTP_RESPONSE_START"
+  requestId: string
+  status: number
+  headers: Record<string, string>
+}
+
+export interface HttpResponseChunkMessage {
+  type: "HTTP_RESPONSE_CHUNK"
+  requestId: string
+  chunk: string
+}
+
+export interface HttpResponseEndMessage {
+  type: "HTTP_RESPONSE_END"
+  requestId: string
+}
