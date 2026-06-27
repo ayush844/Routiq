@@ -1,9 +1,12 @@
 {
-  "name": "agent",
+  "name": "@routiq/agent",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc"
+  },
+  "exports": {
+    ".": "./src/agent.ts"
   },
   "dependencies": {
     "@routiq/shared": "workspace:*",
