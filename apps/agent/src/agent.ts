@@ -10,145 +10,181 @@ export interface AgentConfig {
     ports: number[];
     relayUrl: string;
     token: string;
+
+    onConnecting?(): void;
+    onConnected?(): void;
+    onAuthenticated?(userId: string): void;
+
+    onTunnelCreated?(tunnel: TunnelCreatedMessage): void;
+
+    onDisconnected?(): void;
+
+    onReconnect?(delay: number): void;
+
+    onError?(error: Error): void;
+    onStopping?(): void;
+
+    onStopped?(): void;
 }
 
-export function startAgent(config: AgentConfig) {
+export interface Agent {
+    stop(): void;
+}
 
-    if (!config.token) {
-        throw new Error(
-            "AGENT_TOKEN is missing"
+export function startAgent(config: AgentConfig): Agent {
+
+  let reconnectDelay = 2000;
+  let shuttingDown = false;
+  let reconnectTimer: NodeJS.Timeout | null = null;
+  let ws: WebSocket | null = null;
+
+  if (!config.token) {
+    throw new Error(
+        "AGENT_TOKEN is missing"
+    )
+  }
+
+  if (config.ports.some(port => port <= 0 || port > 65535)) {
+    throw new Error("Invalid port");
+  }
+
+  function connect() {
+    config.onConnecting?.();
+  
+    ws = new WebSocket(config.relayUrl)
+  
+    ws.on("open", () => {
+      reconnectDelay = 2000
+      config.onConnected?.();
+  
+      ws!.send(JSON.stringify(createAuthMessage(config.token!)))
+    })
+  
+    ws.on("message", async (data) => {
+      try {
+        const message = JSON.parse(
+          data.toString()
         )
-    }
+  
+        switch (message.type) {
+          case "AUTH_SUCCESS": {
+            const authSuccess = message as AuthSuccessMessage
 
-    if (config.ports.some(port => port <= 0 || port > 65535)) {
-        throw new Error("Invalid port");
-    }
+            config.onAuthenticated?.(authSuccess.userId);
 
-    let reconnectDelay = 2000
-    
-    function connect() {
-      console.log(`Connecting to ${config.relayUrl}...`)
-    
-      const ws = new WebSocket(config.relayUrl)
-    
-      ws.on("open", () => {
-        reconnectDelay = 2000
-        console.log("Connected to relay server")
-    
-        ws.send(JSON.stringify(createAuthMessage(config.token!)))
-      })
-    
-      ws.on("message", async (data) => {
-        try {
-          const message = JSON.parse(
-            data.toString()
-          )
-    
-          switch (message.type) {
-            case "AUTH_SUCCESS": {
-              const authSuccess = message as AuthSuccessMessage
-    
-              console.log(`Authenticated as ${authSuccess.userId}`)
-    
-              // createTunnel(ws, 3000)
-              // createTunnel(ws, 5173)
-    
-              for (const port of config.ports) {
-                createTunnel(ws, port)
-              }
-    
-              break
+            for (const port of config.ports) {
+              createTunnel(ws!, port)
             }
-    
-            case "AUTH_FAILED":
-              console.log("Authentication failed")
-              ws.close()
-              break
-    
-            case "TUNNEL_CREATED": {
-              const tunnel = message as TunnelCreatedMessage;
-              tunnels.set(tunnel.tunnelId, tunnel.port);
-              console.log(`${tunnel.tunnelId} Tunnel created: ${tunnel.url} -> localhost:${tunnel.port}`);
-    
-              break;
-            }
-    
-            case "HTTP_REQUEST": {
-              console.log("Received HTTP request:", message)
-    
-              try {
-    
-                const httpRequest = message as HttpRequestMessage
-                const port = tunnels.get(httpRequest.tunnelId)
-    
-                if (!port) {
-    
-                  const httpResponse: HttpResponseMessage = {
-                    type: "HTTP_RESPONSE",
-                    requestId: httpRequest.requestId,
-                    status: 404,
-                    headers: {},
-                    body: "Tunnel not found"
-                  }
-    
-                  ws.send(
-                    JSON.stringify(httpResponse)
-                  )
-    
-                  break
-                }
-    
-                console.log("HELLLLLLL")
-                await handleHttpRequest(
-                  httpRequest, port, ws
-                )
-    
-              } catch (error) {
-    
-                const errResponse: HttpResponseMessage = {
-                  type: "HTTP_RESPONSE",
-                  requestId: message.requestId,
-                  status: 502,
-                  headers: {},
-                  body: "Internal Server Error"
-                }
-    
-                ws.send(JSON.stringify(errResponse))
-              }
-    
-              break;
-            }
-    
-            case "PING": {
-              ws.send(JSON.stringify(pong));
-              break;
-            }
-    
-            default:
-              console.log("Unknown message:", message)
+  
+            break
           }
-        } catch (error) {
-          console.error("Failed to parse message:", error)
+  
+          case "AUTH_FAILED":
+            config.onError?.(
+              new Error("Authentication failed")
+            );
+
+            ws!.close()
+            break
+  
+          case "TUNNEL_CREATED": {
+            const tunnel = message as TunnelCreatedMessage;
+            tunnels.set(tunnel.tunnelId, tunnel.port);
+            config.onTunnelCreated?.(tunnel);
+  
+            break;
+          }
+  
+          case "HTTP_REQUEST": {
+            try {
+  
+              const httpRequest = message as HttpRequestMessage
+              const port = tunnels.get(httpRequest.tunnelId)
+  
+              if (!port) {
+  
+                const httpResponse: HttpResponseMessage = {
+                  type: "HTTP_RESPONSE",
+                  requestId: httpRequest.requestId,
+                  status: 404,
+                  headers: {},
+                  body: "Tunnel not found"
+                }
+  
+                ws!.send(
+                  JSON.stringify(httpResponse)
+                )
+  
+                break
+              }
+
+              await handleHttpRequest(
+                httpRequest, port, ws!
+              )
+  
+            } catch (error) {
+  
+              const errResponse: HttpResponseMessage = {
+                type: "HTTP_RESPONSE",
+                requestId: message.requestId,
+                status: 502,
+                headers: {},
+                body: "Internal Server Error"
+              }
+  
+              ws!.send(JSON.stringify(errResponse))
+            }
+  
+            break;
+          }
+  
+          case "PING": {
+            ws!.send(JSON.stringify(pong));
+            break;
+          }
+  
+          default:
+            break;
         }
-      })
-    
-      ws.on("error", (err) => {
-        console.error("WebSocket error:", err.message)
-      })
-    
-      ws.on("close", () => {
-        console.log("Disconnected from relay")
-        tunnels.clear()
-        console.log(`Reconnecting in ${reconnectDelay / 1000}s`)
-        setTimeout(() => {
-          console.log("Attempting to reconnect...")
-    
-          connect()
-        }, reconnectDelay);
-    
-        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
-      })
+      } catch (error) {
+        config.onError?.(error as Error);
+      }
+    })
+  
+    ws.on("error", (err) => {
+      config.onError?.(err);
+    })
+  
+    ws.on("close", () => {
+      config.onDisconnected?.();
+      tunnels.clear()
+      if (shuttingDown) {
+        config.onStopped?.();
+        return;
+      }
+      config.onReconnect?.(reconnectDelay);
+      reconnectTimer = setTimeout(() => {
+        connect()
+      }, reconnectDelay);
+  
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+
+    })
+  }
+  
+  connect();
+
+
+  return {
+    stop() {
+        shuttingDown = true;
+
+        config.onStopping?.();
+
+        reconnectTimer && clearTimeout(reconnectTimer);
+
+        ws?.terminate();
     }
-    
-    connect()
+  }
+
 }
