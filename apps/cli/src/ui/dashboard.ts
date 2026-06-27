@@ -3,6 +3,7 @@ import boxen from "boxen";
 import chalk from "chalk";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
+import Table from "cli-table3";
 
 type Tunnel = {
     port: number;
@@ -83,105 +84,201 @@ export class Dashboard {
         return chalk.green(status);
     }
 
-    private mergeBoxes(left: string, right: string) {
-        const leftLines = left.split("\n");
-        const rightLines = right.split("\n");
+    // private mergeBoxes(left: string, right: string) {
+    //     const leftLines = left.split("\n");
+    //     const rightLines = right.split("\n");
 
-        const leftWidth = Math.max(
-            ...leftLines.map(line =>
-                stringWidth(stripAnsi(line))
-            )
-        );
+    //     const leftWidth = Math.max(
+    //         ...leftLines.map(line =>
+    //             stringWidth(stripAnsi(line))
+    //         )
+    //     );
 
-        const maxLines = Math.max(
-            leftLines.length,
-            rightLines.length
-        );
+    //     const maxLines = Math.max(
+    //         leftLines.length,
+    //         rightLines.length
+    //     );
 
-        const merged: string[] = [];
+    //     const merged: string[] = [];
 
-        for (let i = 0; i < maxLines; i++) {
-            merged.push(
-                (leftLines[i] ?? "").padEnd(leftWidth + stripAnsi(leftLines[i] ?? "").length - stringWidth(stripAnsi(leftLines[i] ?? ""))) +
-                "  " +
-                (rightLines[i] ?? "")
-            );
-        }
+    //     for (let i = 0; i < maxLines; i++) {
+    //         merged.push(
+    //             (leftLines[i] ?? "").padEnd(leftWidth + stripAnsi(leftLines[i] ?? "").length - stringWidth(stripAnsi(leftLines[i] ?? ""))) +
+    //             "  " +
+    //             (rightLines[i] ?? "")
+    //         );
+    //     }
 
-        return merged.join("\n");
-    }
+    //     return merged.join("\n");
+    // }
 
     private renderBanner() {
         showBanner();
     }
 
-    private renderConnection() {
-        const content = [
-            `${chalk.bold.magenta("●")} Status    ${this.status}`,
-            `${chalk.bold.cyan("●")} Relay     ${this.relay}`,
-            `${chalk.bold.green("●")} User      ${this.user || "-"}`,
+    // private renderConnection() {
+    //     const content = [
+    //         `${chalk.bold.magenta("●")} Status    ${this.status}`,
+    //         `${chalk.bold.cyan("●")} Relay     ${this.relay}`,
+    //         `${chalk.bold.green("●")} User      ${this.user || "-"}`,
+    //     ].join("\n");
+
+
+    //     return boxen(content, {
+    //             title: " Connection ",
+    //             borderStyle: "round",
+    //             borderColor: "magenta",
+    //             padding: {
+    //                 top: 0,
+    //                 bottom: 0,
+    //                 left: 1,
+    //                 right: 1,
+    //             },
+    //         })
+    // }
+
+    // private renderTunnels() {
+
+    //     const content =
+    //         this.tunnels.length === 0
+    //             ? chalk.dim("Waiting for tunnels...")
+    //             : this.tunnels
+    //                 .map(
+    //                     tunnel =>
+    //                         `${chalk.green("●")} localhost:${tunnel.port}\n   ${chalk.magenta(
+    //                             tunnel.url
+    //                         )}`
+    //                 )
+    //                 .join("\n\n");
+
+
+    //     return boxen(content, {
+    //             title: " Active Tunnels ",
+    //             borderStyle: "round",
+    //             borderColor: "magenta",
+    //             padding: 1,
+    //         })
+    // }
+
+    private renderTopPanel() {
+
+        const table = new Table({
+            colWidths: [35, 55],
+            wordWrap: true,
+
+            style: {
+                head: ["magenta"],
+                border: ["magenta"]
+            },
+
+            chars: {
+                "top": "─",
+                "top-mid": "┬",
+                "top-left": "┌",
+                "top-right": "┐",
+
+                "bottom": "─",
+                "bottom-mid": "┴",
+                "bottom-left": "└",
+                "bottom-right": "┘",
+
+                "left": "│",
+                "left-mid": "├",
+
+                "mid": "─",
+                "mid-mid": "┼",
+
+                "right": "│",
+                "right-mid": "┤",
+
+                "middle": "│"
+            }
+        });
+
+        const connection = [
+            `${chalk.green("●")} Status`,
+            `   ${this.status}`,
+            "",
+            `${chalk.cyan("●")} Relay`,
+            `   ${this.relay}`,
+            "",
+            `${chalk.magenta("●")} User`,
+            `   ${this.user || "-"}`
         ].join("\n");
 
-
-        return boxen(content, {
-                title: " Connection ",
-                borderStyle: "round",
-                borderColor: "magenta",
-                padding: {
-                    top: 0,
-                    bottom: 0,
-                    left: 1,
-                    right: 1,
-                },
-            })
-    }
-
-    private renderTunnels() {
-
-        const content =
+        const tunnels =
             this.tunnels.length === 0
                 ? chalk.dim("Waiting for tunnels...")
                 : this.tunnels
                     .map(
                         tunnel =>
-                            `${chalk.green("●")} localhost:${tunnel.port}\n   ${chalk.magenta(
-                                tunnel.url
-                            )}`
+                            `${chalk.bold(`localhost:${tunnel.port}`)}
+    ${chalk.magenta(tunnel.url)}`
                     )
                     .join("\n\n");
 
+        table.push([
+            {
+                content: connection,
+                hAlign: "left"
+            },
+            {
+                content: tunnels,
+                hAlign: "left"
+            }
+        ]);
 
-        return boxen(content, {
-                title: " Active Tunnels ",
-                borderStyle: "round",
-                borderColor: "magenta",
-                padding: 1,
-            })
+        return table.toString();
     }
 
     private renderRequests() {
 
-        const content =
-            this.requests.length === 0
-                ? chalk.dim("Waiting for traffic...")
-                : this.requests
-                    .map(
-                        req =>
-                            [
-                                req.method.padEnd(6),
-                                req.path.padEnd(30),
-                                this.statusColor(req.status),
-                                `${req.duration}ms`.padStart(7),
-                            ].join(" ")
-                    )
-                    .join("\n");
+        const table = new Table({
+            head: [
+                "Method",
+                "Path",
+                "Status",
+                "Time"
+            ],
 
-        return boxen(content, {
-                title: " Recent Requests ",
-                borderStyle: "round",
-                borderColor: "magenta",
-                padding: 1,
-            })
+            colWidths: [
+                10,
+                45,
+                10,
+                10
+            ],
+
+            style: {
+                head: ["magenta"],
+                border: ["magenta"]
+            }
+        });
+
+        if (this.requests.length === 0) {
+
+            table.push([
+                "",
+                chalk.dim("Waiting for traffic..."),
+                "",
+                ""
+            ]);
+
+        } else {
+
+            for (const req of this.requests) {
+
+                table.push([
+                    chalk.cyan(req.method),
+                    req.path,
+                    this.statusColor(req.status),
+                    `${req.duration} ms`
+                ]);
+
+            }
+
+        }
+
+        return table.toString();
     }
 
     private renderFooter() {
@@ -204,19 +301,17 @@ export class Dashboard {
 
         this.renderBanner();
 
-        const top = this.mergeBoxes(
-            this.renderConnection(),
-            this.renderTunnels()
-        );
+        console.log();
 
-        console.log(top);
+        console.log(
+            this.renderTopPanel()
+        );
 
         console.log();
 
         console.log(
             this.renderRequests()
         );
-
 
         this.renderFooter();
     }
