@@ -22,9 +22,15 @@ export interface AgentConfig {
     onReconnect?(delay: number): void;
 
     onError?(error: Error): void;
-    onStopping?(): void;
 
     onStopped?(): void;
+
+    onRequest?(request: {
+      method: string;
+      path: string;
+      status: number;
+      duration: number;
+    }): void;
 }
 
 export interface Agent {
@@ -118,9 +124,16 @@ export function startAgent(config: AgentConfig): Agent {
                 break
               }
 
-              await handleHttpRequest(
+              const result = await handleHttpRequest(
                 httpRequest, port, ws!
               )
+
+              config.onRequest?.({
+                method: httpRequest.method,
+                path: httpRequest.path,
+                status: result.status,
+                duration: result.duration
+              });
   
             } catch (error) {
   
@@ -156,12 +169,13 @@ export function startAgent(config: AgentConfig): Agent {
     })
   
     ws.on("close", () => {
-      config.onDisconnected?.();
+      
       tunnels.clear()
       if (shuttingDown) {
         config.onStopped?.();
         return;
       }
+      config.onDisconnected?.();
       config.onReconnect?.(reconnectDelay);
       reconnectTimer = setTimeout(() => {
         connect()
@@ -178,8 +192,6 @@ export function startAgent(config: AgentConfig): Agent {
   return {
     stop() {
         shuttingDown = true;
-
-        config.onStopping?.();
 
         reconnectTimer && clearTimeout(reconnectTimer);
 

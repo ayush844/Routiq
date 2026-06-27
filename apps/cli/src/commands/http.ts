@@ -1,16 +1,19 @@
 import { startAgent } from "@routiq/agent";
 import { RELAY_URL, AGENT_TOKEN } from "../config/env.js";
 import { validatePorts } from "../utils/validate-port.js";
-import { spinner } from "../ui/spinner.js";
 import { logger } from "../ui/logger.js";
+import { Dashboard } from "../ui/dashboard.js";
 
 export function httpCommand(ports: string[]) {
-
-    spinner.start("Connecting to relay...");
 
     const parsedPorts = ports.map(Number);
 
     validatePorts(parsedPorts);
+
+    const dashboard = new Dashboard();
+
+    dashboard.setRelay(RELAY_URL!);
+
 
     const agent = startAgent({
 
@@ -19,45 +22,52 @@ export function httpCommand(ports: string[]) {
         token: AGENT_TOKEN!,
 
         onConnecting() {
-            spinner.text = "Connecting to relay...";
+            dashboard.setStatus("Connecting...");
         },
 
         onConnected() {
-            spinner.text = "Authenticating...";
+            dashboard.setStatus("Authenticating...");
         },
 
-        onAuthenticated() {
-            spinner.succeed("Connected");
+        onAuthenticated(userId) {
+            dashboard.setStatus("Connected");
+            dashboard.setUser(userId);
         },
 
         onTunnelCreated(tunnel) {
-            logger.success(
-                `${tunnel.url} → localhost:${tunnel.port}`
+            dashboard.addTunnel(
+                tunnel.port,
+                tunnel.url
             );
         },
 
         onDisconnected() {
-            logger.warn("Disconnected");
+            dashboard.setStatus("Disconnected");
         },
 
         onReconnect(delay) {
-            logger.warn(
-                `Reconnecting in ${delay / 1000}s...`
+            dashboard.setStatus(
+                `Reconnecting in ${delay / 1000}s`
             );
         },
 
         onError(error) {
-            spinner.fail(error.message);
-        },
-
-        onStopping(){
-            spinner.fail("\nStopping Routiq...");
+            dashboard.setStatus(`Error: ${error.message}`);
         },
 
         onStopped() {
-            spinner.stop();
-            logger.success("Goodbye 👋");
+            console.clear();
+
+            console.log();
+            console.log("👋  Thanks for using Routiq.");
+            console.log("Built with ❤️  by Ayush Sharma");
+            console.log();
+
             process.exit(0);
+        },
+
+        onRequest(request) {
+            dashboard.addRequest(request);
         }
     });
 

@@ -13,6 +13,6 @@ program
 
 program.command("http").argument("<port...>").action(httpCommand);
 
-showBanner();
+// showBanner();
 
 program.parse();
