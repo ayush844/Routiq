@@ -253,6 +253,9 @@ importers:
       cli-table3:
         specifier: ^0.6.5
         version: 0.6.5
+      colors:
+        specifier: ^1.4.0
+        version: 1.4.0
       commander:
         specifier: ^15.0.0
         version: 15.0.0
@@ -281,6 +284,9 @@ importers:
         specifier: ^7.2.0
         version: 7.2.0
     devDependencies:
+      '@types/colors':
+        specifier: ^1.2.4
+        version: 1.2.4
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
@@ -1037,6 +1043,10 @@ packages:
   '@tybys/wasm-util@0.10.3':
     resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
 
+  '@types/colors@1.2.4':
+    resolution: {integrity: sha512-oSQxEVIDcYisAzWLa+wr50GSIPu8ml4PsKNJzgrDX3SmEHVBBqbaUurqsUceFauNlCRxNtENKkQm3yOe3m3nfg==}
+    deprecated: This is a stub types definition. colors provides its own type definitions, so you do not need this installed.
+
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
@@ -1447,6 +1457,10 @@ packages:
 
   color-name@1.1.4:
     resolution: {integrity: sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==}
+
+  colors@1.4.0:
+    resolution: {integrity: sha512-a+UqTh4kgZg/SlGvfbzDHpgRu7AAQOmmqRHJnxhRZICKFUT91brVhNNt58CMWU9PsBbv3PDCZUHbVxuDiH2mtA==}
+    engines: {node: '>=0.1.90'}
 
   commander@14.0.3:
     resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
@@ -3297,6 +3311,10 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
+  '@types/colors@1.2.4':
+    dependencies:
+      colors: 1.4.0
+
   '@types/estree@1.0.9': {}
 
   '@types/json-schema@7.0.15': {}
@@ -3706,6 +3724,8 @@ snapshots:
       color-name: 1.1.4
 
   color-name@1.1.4: {}
+
+  colors@1.4.0: {}
 
   commander@14.0.3: {}
 

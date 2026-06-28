@@ -60,6 +60,7 @@ export function startAgent(config: AgentConfig): Agent {
     ws = new WebSocket(config.relayUrl)
   
     ws.on("open", () => {
+      console.log("OPEN");
       reconnectDelay = 2000
       config.onConnected?.();
   
@@ -169,7 +170,7 @@ export function startAgent(config: AgentConfig): Agent {
     })
   
     ws.on("close", () => {
-      
+      console.log("CLOSE");
       tunnels.clear()
       if (shuttingDown) {
         config.onStopped?.();

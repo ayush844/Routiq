@@ -4,6 +4,7 @@ import chalk from "chalk";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import Table from "cli-table3";
+import { c, tableColors } from "./theme";
 
 type Tunnel = {
     port: number;
@@ -167,8 +168,8 @@ export class Dashboard {
             wordWrap: true,
 
             style: {
-                head: ["magenta"],
-                border: ["magenta"]
+                head: tableColors.head,
+                border: tableColors.border
             },
 
             chars: {
@@ -202,7 +203,7 @@ export class Dashboard {
             `${chalk.cyan("●")} Relay`,
             `   ${this.relay}`,
             "",
-            `${chalk.magenta("●")} User`,
+            `${c.signalLight("●")} User`,
             `   ${this.user || "-"}`
         ].join("\n");
 
@@ -213,7 +214,7 @@ export class Dashboard {
                     .map(
                         tunnel =>
                             `${chalk.bold(`localhost:${tunnel.port}`)}
-    ${chalk.magenta(tunnel.url)}`
+    ${c.signalLight(tunnel.url)}`
                     )
                     .join("\n\n");
 
@@ -249,8 +250,8 @@ export class Dashboard {
             ],
 
             style: {
-                head: ["magenta"],
-                border: ["magenta"]
+                head: tableColors.head,
+                border: tableColors.border
             }
         });
 
@@ -291,7 +292,7 @@ export class Dashboard {
         );
 
         console.log(
-            chalk.magenta("https://x.com/ayushuprush")
+            c.signalLight("https://x.com/ayushuprush")
         );
     }
 
