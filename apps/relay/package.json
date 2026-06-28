@@ -1,5 +1,5 @@
 {
-  "name": "relay",
+  "name": "@routiq/relay",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
