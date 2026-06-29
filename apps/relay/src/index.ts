@@ -65,6 +65,8 @@ wss.on("connection", (ws) => {
   }, 10000)
 
   ws.on("message", (data) => {
+    client.lastPongAt = Date.now()
+
     try {
       const message = JSON.parse(
         data.toString()
@@ -137,6 +139,16 @@ wss.on("connection", (ws) => {
             const subdomain = randomUUID().replaceAll("-", "").slice(0, 8)
 
             const createTunnel = message as CreateTunnelMessage
+
+            for (const [existingId, existing] of tunnels.entries()) {
+              if (
+                existing.ownerId === client.user!.userId &&
+                existing.localPort === createTunnel.localPort
+              ) {
+                subdomainToTunnelId.delete(existing.subdomain);
+                tunnels.delete(existingId);
+              }
+            }
 
             const tunnel: Tunnel = {
                 tunnelId,

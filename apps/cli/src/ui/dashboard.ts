@@ -1,10 +1,10 @@
-import { showBanner } from "./banner";
+import { showBanner } from "./banner.js";
 import boxen from "boxen";
 import chalk from "chalk";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import Table from "cli-table3";
-import { c, tableColors } from "./theme";
+import { c, tableColors } from "./theme.js";
 
 type Tunnel = {
     port: number;
@@ -58,11 +58,20 @@ export class Dashboard {
     }
 
     addTunnel(port: number, url: string) {
-        this.tunnels.push({
-            port,
-            url
-        });
+        const index = this.tunnels.findIndex((t) => t.port === port);
+
+        if (index >= 0) {
+            this.tunnels[index] = { port, url };
+        } else {
+            this.tunnels.push({ port, url });
+        }
+
         this.render();
+    }
+
+    clearTunnels() {
+        this.tunnels = [];
+        this.requestRender();
     }
 
     addRequest(request: RequestLog) {

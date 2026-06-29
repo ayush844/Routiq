@@ -43,6 +43,7 @@ export function startAgent(config: AgentConfig): Agent {
   let shuttingDown = false;
   let reconnectTimer: NodeJS.Timeout | null = null;
   let ws: WebSocket | null = null;
+  let connectionId = 0;
 
   if (!config.token) {
     throw new Error(
@@ -54,25 +55,52 @@ export function startAgent(config: AgentConfig): Agent {
     throw new Error("Invalid port");
   }
 
+  function cleanupSocket(socket: WebSocket | null) {
+    if (!socket) return;
+
+    socket.removeAllListeners();
+
+    if (
+      socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING
+    ) {
+      socket.terminate();
+    }
+  }
+
   function connect() {
+    if (shuttingDown) return;
+
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    cleanupSocket(ws);
+
+    const id = ++connectionId;
     config.onConnecting?.();
-  
-    ws = new WebSocket(config.relayUrl)
-  
-    ws.on("open", () => {
-      console.log("OPEN");
-      reconnectDelay = 2000
+
+    const socket = new WebSocket(config.relayUrl);
+    ws = socket;
+
+    socket.on("open", () => {
+      if (id !== connectionId) return;
+
+      reconnectDelay = 2000;
       config.onConnected?.();
-  
-      ws!.send(JSON.stringify(createAuthMessage(config.token!)))
-    })
-  
-    ws.on("message", async (data) => {
+
+      socket.send(JSON.stringify(createAuthMessage(config.token!)));
+    });
+
+    socket.on("message", async (data) => {
+      if (id !== connectionId) return;
+
       try {
         const message = JSON.parse(
           data.toString()
         )
-  
+
         switch (message.type) {
           case "AUTH_SUCCESS": {
             const authSuccess = message as AuthSuccessMessage
@@ -80,36 +108,36 @@ export function startAgent(config: AgentConfig): Agent {
             config.onAuthenticated?.(authSuccess.userId);
 
             for (const port of config.ports) {
-              createTunnel(ws!, port)
+              createTunnel(socket, port)
             }
-  
+
             break
           }
-  
+
           case "AUTH_FAILED":
             config.onError?.(
               new Error("Authentication failed")
             );
 
-            ws!.close()
+            socket.close()
             break
-  
+
           case "TUNNEL_CREATED": {
             const tunnel = message as TunnelCreatedMessage;
             tunnels.set(tunnel.tunnelId, tunnel.port);
             config.onTunnelCreated?.(tunnel);
-  
+
             break;
           }
-  
+
           case "HTTP_REQUEST": {
             try {
-  
+
               const httpRequest = message as HttpRequestMessage
               const port = tunnels.get(httpRequest.tunnelId)
-  
+
               if (!port) {
-  
+
                 const httpResponse: HttpResponseMessage = {
                   type: "HTTP_RESPONSE",
                   requestId: httpRequest.requestId,
@@ -117,16 +145,16 @@ export function startAgent(config: AgentConfig): Agent {
                   headers: {},
                   body: "Tunnel not found"
                 }
-  
-                ws!.send(
+
+                socket.send(
                   JSON.stringify(httpResponse)
                 )
-  
+
                 break
               }
 
               const result = await handleHttpRequest(
-                httpRequest, port, ws!
+                httpRequest, port, socket
               )
 
               config.onRequest?.({
@@ -135,9 +163,9 @@ export function startAgent(config: AgentConfig): Agent {
                 status: result.status,
                 duration: result.duration
               });
-  
+
             } catch (error) {
-  
+
               const errResponse: HttpResponseMessage = {
                 type: "HTTP_RESPONSE",
                 requestId: message.requestId,
@@ -145,18 +173,18 @@ export function startAgent(config: AgentConfig): Agent {
                 headers: {},
                 body: "Internal Server Error"
               }
-  
-              ws!.send(JSON.stringify(errResponse))
+
+              socket.send(JSON.stringify(errResponse))
             }
-  
+
             break;
           }
-  
+
           case "PING": {
-            ws!.send(JSON.stringify(pong));
+            socket.send(JSON.stringify(pong));
             break;
           }
-  
+
           default:
             break;
         }
@@ -164,26 +192,31 @@ export function startAgent(config: AgentConfig): Agent {
         config.onError?.(error as Error);
       }
     })
-  
-    ws.on("error", (err) => {
+
+    socket.on("error", (err) => {
+      if (id !== connectionId) return;
       config.onError?.(err);
     })
-  
-    ws.on("close", () => {
-      console.log("CLOSE");
-      tunnels.clear()
+
+    socket.on("close", () => {
+      if (id !== connectionId) return;
+
+      tunnels.clear();
+
       if (shuttingDown) {
         config.onStopped?.();
         return;
       }
+
       config.onDisconnected?.();
       config.onReconnect?.(reconnectDelay);
-      reconnectTimer = setTimeout(() => {
-        connect()
-      }, reconnectDelay);
-  
-      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
 
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, reconnectDelay);
+
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
     })
   }
   
@@ -194,9 +227,29 @@ export function startAgent(config: AgentConfig): Agent {
     stop() {
         shuttingDown = true;
 
-        reconnectTimer && clearTimeout(reconnectTimer);
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
 
-        ws?.terminate();
+        connectionId++;
+
+        const socket = ws;
+        ws = null;
+
+        if (socket) {
+          socket.removeAllListeners();
+
+          if (
+            socket.readyState === WebSocket.OPEN ||
+            socket.readyState === WebSocket.CONNECTING
+          ) {
+            socket.terminate();
+          }
+        }
+
+        tunnels.clear();
+        config.onStopped?.();
     }
   }
 
