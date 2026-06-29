@@ -1,65 +1,23 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Check } from "lucide-react";
-import Link from "next/link";
+import { Check, Github, Star } from "lucide-react";
 import { SectionHeader } from "@/components/section-header";
 import { AnimatedButton } from "@/components/animated-button";
 import { Button } from "@/components/ui/button";
-import { staggerContainer, fadeInUp, viewportOnce } from "@/lib/animations";
-import { cn } from "@/lib/utils";
+import { fadeInUp, viewportOnce } from "@/lib/animations";
 
-const plans = [
-  {
-    name: "Free",
-    price: "$0",
-    period: "forever",
-    description: "Perfect for side projects and learning.",
-    features: [
-      "1 active tunnel",
-      "100 requests/day",
-      "Community support",
-      "Basic request logging",
-      "Random subdomain",
-    ],
-    cta: "Get Started",
-    highlighted: false,
-  },
-  {
-    name: "Pro",
-    price: "$12",
-    period: "/month",
-    description: "For developers who ship every day.",
-    features: [
-      "10 active tunnels",
-      "Unlimited requests",
-      "Custom subdomains",
-      "Advanced analytics",
-      "Priority support",
-      "Team collaboration",
-      "Webhook replay",
-    ],
-    cta: "Start Free Trial",
-    highlighted: true,
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For teams with advanced security needs.",
-    features: [
-      "Unlimited tunnels",
-      "Dedicated relay nodes",
-      "SSO & SAML",
-      "Audit logs",
-      "SLA guarantee",
-      "Custom domains",
-      "Dedicated support",
-    ],
-    cta: "Contact Sales",
-    highlighted: false,
-  },
+const features = [
+  "Expose localhost via CLI",
+  "Live request logging",
+  "No hidden fees today",
+  "Open source",
+  "No credit card to start",
 ];
+
+const GITHUB_REPO = "https://github.com/ayush844/Routiq";
+const GITHUB_PROFILE = "https://github.com/ayush844";
+const TWITTER = "https://x.com/ayushuprush";
 
 export function Pricing() {
   return (
@@ -69,77 +27,76 @@ export function Pricing() {
           initial="hidden"
           whileInView="visible"
           viewport={viewportOnce}
-          variants={staggerContainer}
+          variants={fadeInUp}
         >
           <SectionHeader
             eyebrow="Pricing"
-            title="Simple, transparent pricing"
-            description="Start for free, scale when you need to. No hidden fees, no surprises."
+            title="Free at the core"
+            description="The essentials — tunneling, the CLI, and request logging — are free to use with no hidden charges. We may add optional paid plans later, but the heart of Routiq stays free."
           />
 
-          <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
-            {plans.map((plan) => (
-              <motion.div
-                key={plan.name}
-                variants={fadeInUp}
-                whileHover={{ y: -6 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className={cn(
-                  "relative flex flex-col rounded-[40px] border p-8 transition-all duration-300",
-                  plan.highlighted
-                    ? "border-ink bg-white shadow-card"
-                    : "border-ink/10 bg-white hover:border-ink/20 hover:shadow-nav"
-                )}
-              >
-                {plan.highlighted && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                    <span className="rounded-full bg-ink px-4 py-1 text-xs font-medium text-canvas">
-                      Most Popular
-                    </span>
-                  </div>
-                )}
+          <div className="mx-auto max-w-lg">
+            <div className="rounded-[40px] border border-ink/10 bg-white p-8 text-center shadow-card md:p-10">
+              <p className="text-5xl font-medium tracking-[-0.02em] text-ink">
+                $0
+              </p>
+              <p className="mt-1 text-muted">to get started</p>
 
-                <div className="mb-6">
-                  <h3 className="text-lg font-medium text-ink">{plan.name}</h3>
-                  <p className="mt-1 text-sm text-muted">{plan.description}</p>
-                </div>
-
-                <div className="mb-8">
-                  <span className="text-4xl font-medium tracking-[-0.02em] text-ink">
-                    {plan.price}
-                  </span>
-                  {plan.period && (
-                    <span className="text-muted">{plan.period}</span>
-                  )}
-                </div>
-
-                <ul className="mb-8 flex-1 space-y-3">
-                  {plan.features.map((feature) => (
-                    <li
-                      key={feature}
-                      className="flex items-start gap-3 text-sm text-muted"
-                    >
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-signal" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-
-                {plan.highlighted ? (
-                  <AnimatedButton className="w-full" asChild>
-                    <Link href="#cta">{plan.cta}</Link>
-                  </AnimatedButton>
-                ) : (
-                  <Button
-                    variant={plan.name === "Enterprise" ? "secondary" : "outline"}
-                    className="w-full"
-                    asChild
+              <ul className="mt-8 space-y-3 text-left">
+                {features.map((feature) => (
+                  <li
+                    key={feature}
+                    className="flex items-center gap-3 text-sm text-muted"
                   >
-                    <Link href="#cta">{plan.cta}</Link>
+                    <Check className="h-4 w-4 shrink-0 text-signal" />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-8 space-y-3">
+                <AnimatedButton variant="signal" className="w-full" asChild>
+                  <a
+                    href={GITHUB_REPO}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Star className="h-4 w-4" />
+                    Star on GitHub
+                  </a>
+                </AnimatedButton>
+
+                <p className="text-sm text-muted">
+                  Routiq is open source — a star helps others find it and
+                  supports what we build next.
+                </p>
+              </div>
+
+              <div className="mt-8 border-t border-ink/10 pt-6">
+                <p className="text-sm text-muted">Follow the journey</p>
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                  <Button variant="outline" size="sm" asChild>
+                    <a
+                      href={GITHUB_PROFILE}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Github className="h-4 w-4" />
+                      @ayush844
+                    </a>
                   </Button>
-                )}
-              </motion.div>
-            ))}
+                  <Button variant="outline" size="sm" asChild>
+                    <a
+                      href={TWITTER}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      @ayushuprush
+                    </a>
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         </motion.div>
       </div>

@@ -28,8 +28,7 @@ export function Cta() {
               <span className="text-canvas/80">today.</span>
             </h2>
             <p className="mx-auto mt-4 max-w-lg text-lg text-white/60">
-              Join thousands of developers shipping faster with Routiq.
-              Free to start, no credit card required.
+              Start tunneling in seconds. Free to use, no credit card required.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
