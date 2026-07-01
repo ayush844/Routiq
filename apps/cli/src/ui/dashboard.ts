@@ -1,9 +1,10 @@
-import { showBanner } from "./banner";
+import { showBanner } from "./banner.js";
 import boxen from "boxen";
 import chalk from "chalk";
 import stringWidth from "string-width";
 import stripAnsi from "strip-ansi";
 import Table from "cli-table3";
+import { c, tableColors } from "./theme.js";
 
 type Tunnel = {
     port: number;
@@ -57,11 +58,20 @@ export class Dashboard {
     }
 
     addTunnel(port: number, url: string) {
-        this.tunnels.push({
-            port,
-            url
-        });
+        const index = this.tunnels.findIndex((t) => t.port === port);
+
+        if (index >= 0) {
+            this.tunnels[index] = { port, url };
+        } else {
+            this.tunnels.push({ port, url });
+        }
+
         this.render();
+    }
+
+    clearTunnels() {
+        this.tunnels = [];
+        this.requestRender();
     }
 
     addRequest(request: RequestLog) {
@@ -167,8 +177,8 @@ export class Dashboard {
             wordWrap: true,
 
             style: {
-                head: ["magenta"],
-                border: ["magenta"]
+                head: tableColors.head,
+                border: tableColors.border
             },
 
             chars: {
@@ -202,7 +212,7 @@ export class Dashboard {
             `${chalk.cyan("●")} Relay`,
             `   ${this.relay}`,
             "",
-            `${chalk.magenta("●")} User`,
+            `${c.signalLight("●")} User`,
             `   ${this.user || "-"}`
         ].join("\n");
 
@@ -213,7 +223,7 @@ export class Dashboard {
                     .map(
                         tunnel =>
                             `${chalk.bold(`localhost:${tunnel.port}`)}
-    ${chalk.magenta(tunnel.url)}`
+    ${c.signalLight(tunnel.url)}`
                     )
                     .join("\n\n");
 
@@ -249,8 +259,8 @@ export class Dashboard {
             ],
 
             style: {
-                head: ["magenta"],
-                border: ["magenta"]
+                head: tableColors.head,
+                border: tableColors.border
             }
         });
 
@@ -291,7 +301,7 @@ export class Dashboard {
         );
 
         console.log(
-            chalk.magenta("https://x.com/ayushuprush")
+            c.signalLight("https://x.com/ayushuprush")
         );
     }
 

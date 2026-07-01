@@ -1,7 +1,6 @@
 import boxen from "boxen";
-import gradient from "gradient-string";
 import figlet from "figlet";
-import chalk from "chalk";
+import { brandGradient, boxBorderColor, c } from "./theme";
 
 export function showBanner() {
   const logo = figlet.textSync("Routiq", {
@@ -11,10 +10,10 @@ export function showBanner() {
 
   console.log(
     boxen(
-      `${gradient.instagram.multiline(logo)}
+      `${brandGradient.multiline(logo)}
 
-${chalk.gray("Expose localhost to the internet")}
-${chalk.dim("Fast • Secure • Simple")}
+${c.gray("Expose localhost to the internet")}
+${c.dim("Fast • Secure • Simple")}
 `,
       {
         padding: {
@@ -24,7 +23,7 @@ ${chalk.dim("Fast • Secure • Simple")}
           right: 2,
         },
         borderStyle: "round",
-        borderColor: "magenta",
+        borderColor: boxBorderColor,
       }
     )
   );

@@ -1,6 +1,7 @@
 import ora from "ora";
+import { palette } from "./theme";
 
 export const spinner = ora({
-    color: "magenta",
-    spinner: "dots"
+  color: palette.signalLight as "yellow",
+  spinner: "dots",
 });

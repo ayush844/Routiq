@@ -23,6 +23,7 @@ export function httpCommand(ports: string[]) {
 
         onConnecting() {
             dashboard.setStatus("Connecting...");
+            dashboard.clearTunnels();
         },
 
         onConnected() {
