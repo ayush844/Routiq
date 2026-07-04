@@ -1,25 +1,40 @@
-import jwt from "jsonwebtoken"
-import { JwtPayload } from "../types/relay.js"
+import crypto from "node:crypto";
+import jwt from "jsonwebtoken";
+import { JwtPayload } from "../types/relay.js";
+import { queryApiKeyUserId, updateApiKeyLastUsed } from "./db.js";
 
-export function validateToken(token: string, secret: string): JwtPayload | null {
+export function validateToken(
+  token: string,
+  secret: string
+): JwtPayload | null {
   try {
-    const decoded = jwt.verify(token, secret)
+    const decoded = jwt.verify(token, secret);
 
     if (
       typeof decoded === "object" &&
       "userId" in decoded &&
       "role" in decoded
     ) {
-      return decoded as JwtPayload
+      return decoded as JwtPayload;
     }
 
-    return null
+    return null;
   } catch (error) {
-    console.error(
-      "Token verification failed:",
-      error
-    )
-
-    return null
+    console.error("Token verification failed:", error);
+    return null;
   }
+}
+
+export async function validateApiKey(
+  token: string
+): Promise<{ userId: string } | null> {
+  const hash = crypto.createHash("sha256").update(token).digest("hex");
+
+  const userId = await queryApiKeyUserId(hash);
+
+  if (!userId) return null;
+
+  updateApiKeyLastUsed(hash);
+
+  return { userId };
 }

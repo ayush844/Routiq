@@ -18,14 +18,14 @@ import Fastify from "fastify"
 import { ClientState, Tunnel, TunnelParams } from "./types/relay.js"
 import { subdomainToTunnelId, tunnels } from "./stores/tunnels.js"
 import { pendingRequests } from "./stores/requests.js"
-import { validateToken } from "./services/auth.service.js"
+import { validateToken, validateApiKey } from "./services/auth.service.js"
 import { forwardRequest } from "./http/forward-request.js"
 import { TOKEN_SECRET } from "./config/env.js"
 
 dotenv.config()
 
-if (!TOKEN_SECRET) {
-    throw new Error("TOKEN_SECRET is missing")
+if (!TOKEN_SECRET && !process.env.DATABASE_URL) {
+    throw new Error("TOKEN_SECRET or DATABASE_URL is required")
 }
 
 const wss = new WebSocketServer({
@@ -64,7 +64,7 @@ wss.on("connection", (ws) => {
     }
   }, 10000)
 
-  ws.on("message", (data) => {
+  ws.on("message", async (data) => {
     client.lastPongAt = Date.now()
 
     try {
@@ -75,20 +75,24 @@ wss.on("connection", (ws) => {
       switch (message.type) {
         case "AUTH": {
           const authMessage = message as AuthMessage
+          const token = authMessage.token
 
-          const user = validateToken(
-            authMessage.token, TOKEN_SECRET!
-          )
+          let userId: string | null = null
 
-          if (!user) {
-            console.log("hello1")
-            const authFailed:AuthFailedMessage = {
+          if (token.startsWith("rtq_")) {
+            const result = await validateApiKey(token)
+            if (result) userId = result.userId
+          } else if (TOKEN_SECRET) {
+            const jwtResult = validateToken(token, TOKEN_SECRET)
+            if (jwtResult) userId = jwtResult.userId
+          }
+
+          if (!userId) {
+            const authFailed: AuthFailedMessage = {
               type: "AUTH_FAILED",
               reason: "Invalid token"
             }
-            ws.send(
-              JSON.stringify(authFailed)
-            )
+            ws.send(JSON.stringify(authFailed))
 
             setTimeout(() => {
               ws.close()
@@ -98,21 +102,16 @@ wss.on("connection", (ws) => {
           }
 
           client.authenticated = true
-          client.user = user
+          client.user = { userId, role: "user" }
 
-          console.log(
-            `Authenticated user: ${user.userId}`
-          )
+          console.log(`Authenticated user: ${userId}`)
 
-          const response: AuthSuccessMessage =
-            {
-              type: "AUTH_SUCCESS",
-              userId: user.userId
-            }
+          const response: AuthSuccessMessage = {
+            type: "AUTH_SUCCESS",
+            userId
+          }
 
-          ws.send(
-            JSON.stringify(response)
-          )
+          ws.send(JSON.stringify(response))
 
           break
         }
@@ -331,10 +330,12 @@ wss.on("connection", (ws) => {
     clearInterval(healthCheckInterval);
 
     for (const tunnelId of client.tunnelIds) {
-        subdomainToTunnelId.delete(tunnels.get(tunnelId)!.subdomain);
-        tunnels.delete(tunnelId);
-
-        console.log(`Deleted tunnel ${tunnelId}`)
+        const tunnel = tunnels.get(tunnelId);
+        if (tunnel) {
+          subdomainToTunnelId.delete(tunnel.subdomain);
+          tunnels.delete(tunnelId);
+          console.log(`Deleted tunnel ${tunnelId}`);
+        }
     }
     console.log(
       "Client disconnected"
@@ -372,6 +373,31 @@ const handler = async (req: any, reply: any) => {
 app.all<{Params: TunnelParams;}>("/test/:tunnelId", handler);
 
 app.all<{Params: TunnelParams;}>("/test/:tunnelId/*", handler);
+
+app.get("/auth/verify", async (req, reply) => {
+  const auth = req.headers.authorization;
+
+  if (!auth?.startsWith("Bearer ")) {
+    return reply.status(401).send({ error: "Missing token" });
+  }
+
+  const token = auth.slice("Bearer ".length).trim();
+  let userId: string | null = null;
+
+  if (token.startsWith("rtq_")) {
+    const result = await validateApiKey(token);
+    if (result) userId = result.userId;
+  } else if (TOKEN_SECRET) {
+    const jwtResult = validateToken(token, TOKEN_SECRET);
+    if (jwtResult) userId = jwtResult.userId;
+  }
+
+  if (!userId) {
+    return reply.status(401).send({ error: "Invalid token" });
+  }
+
+  return reply.send({ userId });
+});
 
 app.all("/*", async (req, reply) => {
   const host = req.headers.host;

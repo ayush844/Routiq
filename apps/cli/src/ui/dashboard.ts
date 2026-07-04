@@ -1,329 +1,283 @@
-import { showBanner } from "./banner.js";
-import boxen from "boxen";
+import { renderBanner } from "./banner.js";
 import chalk from "chalk";
-import stringWidth from "string-width";
-import stripAnsi from "strip-ansi";
 import Table from "cli-table3";
 import { c, tableColors } from "./theme.js";
+import {
+  ALT_SCREEN_OFF,
+  ALT_SCREEN_ON,
+  CLEAR_SCREEN,
+  getTerminalColumns,
+  isCompactTerminal,
+  onTerminalResize,
+  truncate,
+} from "../utils/terminal.js";
 
 type Tunnel = {
-    port: number;
-    url: string;
+  port: number;
+  url: string;
 };
 
 type RequestLog = {
-    method: string;
-    path: string;
-    status: number;
-    duration: number;
+  method: string;
+  path: string;
+  status: number;
+  duration: number;
 };
 
-
 export class Dashboard {
+  private status = "Connecting...";
+  private relay = "";
+  private user = "";
 
-    private status = "Connecting...";
-    private relay = "";
-    private user = "";
+  private tunnels: Tunnel[] = [];
+  private requests: RequestLog[] = [];
 
-    private tunnels: Tunnel[] = [];
+  private active = false;
+  private dirty = false;
+  private renderTimer: NodeJS.Timeout | null = null;
+  private resizeTimer: NodeJS.Timeout | null = null;
+  private readonly removeResizeListener: () => void;
 
-    private requests: RequestLog[] = [];
+  constructor() {
+    this.removeResizeListener = onTerminalResize(() => {
+      if (this.resizeTimer) clearTimeout(this.resizeTimer);
+      this.resizeTimer = setTimeout(() => this.requestRender(), 150);
+    });
+  }
 
-    private dirty = false;
+  start() {
+    if (this.active) return;
+    this.active = true;
+    process.stdout.write(ALT_SCREEN_ON);
+    this.requestRender();
+  }
 
-    private requestRender() {
-        if (this.dirty) return;
+  dispose() {
+    this.removeResizeListener();
 
-        this.dirty = true;
-
-        setImmediate(() => {
-            this.dirty = false;
-            this.render();
-        });
+    if (this.renderTimer) {
+      clearTimeout(this.renderTimer);
+      this.renderTimer = null;
     }
 
-    setStatus(status: string) {
-        this.status = status;
-        this.requestRender();
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = null;
     }
 
-    setRelay(relay: string) {
-        this.relay = relay;
-        this.render();
+    if (this.active) {
+      process.stdout.write(ALT_SCREEN_OFF);
+      this.active = false;
+    }
+  }
+
+  private requestRender() {
+    if (!this.active) return;
+    if (this.dirty) return;
+
+    this.dirty = true;
+
+    this.renderTimer = setTimeout(() => {
+      this.renderTimer = null;
+      this.dirty = false;
+      this.render();
+    }, 50);
+  }
+
+  setStatus(status: string) {
+    this.status = status;
+    this.requestRender();
+  }
+
+  setRelay(relay: string) {
+    this.relay = relay;
+    this.requestRender();
+  }
+
+  setUser(user: string) {
+    this.user = user;
+    this.requestRender();
+  }
+
+  addTunnel(port: number, url: string) {
+    const index = this.tunnels.findIndex((t) => t.port === port);
+
+    if (index >= 0) {
+      this.tunnels[index] = { port, url };
+    } else {
+      this.tunnels.push({ port, url });
     }
 
-    setUser(user: string) {
-        this.user = user;
-        this.render();
-    }
+    this.requestRender();
+  }
 
-    addTunnel(port: number, url: string) {
-        const index = this.tunnels.findIndex((t) => t.port === port);
+  clearTunnels() {
+    this.tunnels = [];
+    this.requestRender();
+  }
 
-        if (index >= 0) {
-            this.tunnels[index] = { port, url };
-        } else {
-            this.tunnels.push({ port, url });
-        }
+  addRequest(request: RequestLog) {
+    this.requests.unshift(request);
+    this.requests = this.requests.slice(0, isCompactTerminal() ? 4 : 5);
+    this.requestRender();
+  }
 
-        this.render();
-    }
+  private statusColor(status: number) {
+    if (status >= 500) return chalk.red(String(status));
+    if (status >= 400) return chalk.yellow(String(status));
+    if (status >= 300) return chalk.cyan(String(status));
+    return chalk.green(String(status));
+  }
 
-    clearTunnels() {
-        this.tunnels = [];
-        this.requestRender();
-    }
+  private renderTopPanel() {
+    const table = new Table({
+      colWidths: [35, 55],
+      wordWrap: true,
+      style: {
+        head: tableColors.head,
+        border: tableColors.border,
+      },
+      chars: {
+        top: "─",
+        "top-mid": "┬",
+        "top-left": "┌",
+        "top-right": "┐",
+        bottom: "─",
+        "bottom-mid": "┴",
+        "bottom-left": "└",
+        "bottom-right": "┘",
+        left: "│",
+        "left-mid": "├",
+        mid: "─",
+        "mid-mid": "┼",
+        right: "│",
+        "right-mid": "┤",
+        middle: "│",
+      },
+    });
 
-    addRequest(request: RequestLog) {
-        this.requests.unshift(request);
+    const connection = [
+      `${chalk.green("●")} Status`,
+      `   ${this.status}`,
+      "",
+      `${chalk.cyan("●")} Relay`,
+      `   ${this.relay}`,
+      "",
+      `${c.signalLight("●")} User`,
+      `   ${this.user || "-"}`,
+    ].join("\n");
 
-        this.requests = this.requests.slice(0, 5);
-        this.render();
-    }
-
-    private statusColor(status: number) {
-        if (status >= 500)
-            return chalk.red(status);
-
-        if (status >= 400)
-            return chalk.yellow(status);
-
-        if (status >= 300)
-            return chalk.cyan(status);
-
-        return chalk.green(status);
-    }
-
-    // private mergeBoxes(left: string, right: string) {
-    //     const leftLines = left.split("\n");
-    //     const rightLines = right.split("\n");
-
-    //     const leftWidth = Math.max(
-    //         ...leftLines.map(line =>
-    //             stringWidth(stripAnsi(line))
-    //         )
-    //     );
-
-    //     const maxLines = Math.max(
-    //         leftLines.length,
-    //         rightLines.length
-    //     );
-
-    //     const merged: string[] = [];
-
-    //     for (let i = 0; i < maxLines; i++) {
-    //         merged.push(
-    //             (leftLines[i] ?? "").padEnd(leftWidth + stripAnsi(leftLines[i] ?? "").length - stringWidth(stripAnsi(leftLines[i] ?? ""))) +
-    //             "  " +
-    //             (rightLines[i] ?? "")
-    //         );
-    //     }
-
-    //     return merged.join("\n");
-    // }
-
-    private renderBanner() {
-        showBanner();
-    }
-
-    // private renderConnection() {
-    //     const content = [
-    //         `${chalk.bold.magenta("●")} Status    ${this.status}`,
-    //         `${chalk.bold.cyan("●")} Relay     ${this.relay}`,
-    //         `${chalk.bold.green("●")} User      ${this.user || "-"}`,
-    //     ].join("\n");
-
-
-    //     return boxen(content, {
-    //             title: " Connection ",
-    //             borderStyle: "round",
-    //             borderColor: "magenta",
-    //             padding: {
-    //                 top: 0,
-    //                 bottom: 0,
-    //                 left: 1,
-    //                 right: 1,
-    //             },
-    //         })
-    // }
-
-    // private renderTunnels() {
-
-    //     const content =
-    //         this.tunnels.length === 0
-    //             ? chalk.dim("Waiting for tunnels...")
-    //             : this.tunnels
-    //                 .map(
-    //                     tunnel =>
-    //                         `${chalk.green("●")} localhost:${tunnel.port}\n   ${chalk.magenta(
-    //                             tunnel.url
-    //                         )}`
-    //                 )
-    //                 .join("\n\n");
-
-
-    //     return boxen(content, {
-    //             title: " Active Tunnels ",
-    //             borderStyle: "round",
-    //             borderColor: "magenta",
-    //             padding: 1,
-    //         })
-    // }
-
-    private renderTopPanel() {
-
-        const table = new Table({
-            colWidths: [35, 55],
-            wordWrap: true,
-
-            style: {
-                head: tableColors.head,
-                border: tableColors.border
-            },
-
-            chars: {
-                "top": "─",
-                "top-mid": "┬",
-                "top-left": "┌",
-                "top-right": "┐",
-
-                "bottom": "─",
-                "bottom-mid": "┴",
-                "bottom-left": "└",
-                "bottom-right": "┘",
-
-                "left": "│",
-                "left-mid": "├",
-
-                "mid": "─",
-                "mid-mid": "┼",
-
-                "right": "│",
-                "right-mid": "┤",
-
-                "middle": "│"
-            }
-        });
-
-        const connection = [
-            `${chalk.green("●")} Status`,
-            `   ${this.status}`,
-            "",
-            `${chalk.cyan("●")} Relay`,
-            `   ${this.relay}`,
-            "",
-            `${c.signalLight("●")} User`,
-            `   ${this.user || "-"}`
-        ].join("\n");
-
-        const tunnels =
-            this.tunnels.length === 0
-                ? chalk.dim("Waiting for tunnels...")
-                : this.tunnels
-                    .map(
-                        tunnel =>
-                            `${chalk.bold(`localhost:${tunnel.port}`)}
+    const tunnels =
+      this.tunnels.length === 0
+        ? chalk.dim("Waiting for tunnels...")
+        : this.tunnels
+            .map(
+              (tunnel) =>
+                `${chalk.bold(`localhost:${tunnel.port}`)}
     ${c.signalLight(tunnel.url)}`
-                    )
-                    .join("\n\n");
-
-        table.push([
-            {
-                content: connection,
-                hAlign: "left"
-            },
-            {
-                content: tunnels,
-                hAlign: "left"
-            }
-        ]);
-
-        return table.toString();
-    }
-
-    private renderRequests() {
-
-        const table = new Table({
-            head: [
-                "Method",
-                "Path",
-                "Status",
-                "Time"
-            ],
-
-            colWidths: [
-                10,
-                45,
-                10,
-                10
-            ],
-
-            style: {
-                head: tableColors.head,
-                border: tableColors.border
-            }
-        });
-
-        if (this.requests.length === 0) {
-
-            table.push([
-                "",
-                chalk.dim("Waiting for traffic..."),
-                "",
-                ""
-            ]);
-
-        } else {
-
-            for (const req of this.requests) {
-
-                table.push([
-                    chalk.cyan(req.method),
-                    req.path,
-                    this.statusColor(req.status),
-                    `${req.duration} ms`
-                ]);
-
-            }
-
-        }
-
-        return table.toString();
-    }
-
-    private renderFooter() {
-        console.log();
-
-        console.log(
-            chalk.dim(
-                "Press Ctrl+C to stop • Built with ❤️  by Ayush Sharma"
             )
-        );
+            .join("\n\n");
 
-        console.log(
-            c.signalLight("https://x.com/ayushuprush")
-        );
+    table.push([
+      { content: connection, hAlign: "left" },
+      { content: tunnels, hAlign: "left" },
+    ]);
+
+    return table.toString();
+  }
+
+  private renderRequests() {
+    const table = new Table({
+      head: ["Method", "Path", "Status", "Time"],
+      colWidths: [10, 45, 10, 10],
+      style: {
+        head: tableColors.head,
+        border: tableColors.border,
+      },
+    });
+
+    if (this.requests.length === 0) {
+      table.push(["", chalk.dim("Waiting for traffic..."), "", ""]);
+    } else {
+      for (const req of this.requests) {
+        table.push([
+          chalk.cyan(req.method),
+          req.path,
+          this.statusColor(req.status),
+          `${req.duration} ms`,
+        ]);
+      }
     }
 
+    return table.toString();
+  }
 
-    render() {
-        console.clear();
-
-        this.renderBanner();
-
-        console.log();
-
-        console.log(
-            this.renderTopPanel()
-        );
-
-        console.log();
-
-        console.log(
-            this.renderRequests()
-        );
-
-        this.renderFooter();
+  private renderCompactTunnels() {
+    if (this.tunnels.length === 0) {
+      return chalk.dim("  Waiting for tunnels...");
     }
 
+    const cols = getTerminalColumns();
+
+    return this.tunnels
+      .map((tunnel) => {
+        const url = truncate(tunnel.url, Math.max(cols - 4, 16));
+        return `  ${chalk.green("●")} ${chalk.bold(`localhost:${tunnel.port}`)}\n     ${c.signalLight(url)}`;
+      })
+      .join("\n");
+  }
+
+  private renderCompactTraffic() {
+    if (this.requests.length === 0) {
+      return chalk.dim("  Waiting for traffic...");
+    }
+
+    const cols = getTerminalColumns();
+
+    return this.requests
+      .map((req) => {
+        const method = truncate(req.method, 6).padEnd(6);
+        const path = truncate(req.path, Math.max(cols - 22, 10));
+        return `  ${chalk.cyan(method)} ${path}  ${this.statusColor(req.status)}  ${req.duration}ms`;
+      })
+      .join("\n");
+  }
+
+  private renderWideFooter() {
+    return [
+      "",
+      chalk.dim("Press Ctrl+C to stop • Built with ❤️  by Ayush Sharma"),
+      c.signalLight("https://x.com/ayushuprush"),
+    ].join("\n");
+  }
+
+  private buildFrame(): string {
+    if (isCompactTerminal()) {
+      return [
+        renderBanner(true),
+        "",
+        chalk.bold("Tunnels"),
+        this.renderCompactTunnels(),
+        "",
+        chalk.bold("Traffic"),
+        this.renderCompactTraffic(),
+        "",
+        chalk.dim("Press Ctrl+C to stop"),
+      ].join("\n");
+    }
+
+    return [
+      renderBanner(false),
+      "",
+      this.renderTopPanel(),
+      "",
+      this.renderRequests(),
+      this.renderWideFooter(),
+    ].join("\n");
+  }
+
+  render() {
+    if (!this.active) return;
+    process.stdout.write(CLEAR_SCREEN + this.buildFrame());
+  }
 }

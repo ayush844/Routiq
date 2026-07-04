@@ -1,25 +1,56 @@
 import { startAgent } from "@routiq/agent";
-import { RELAY_URL, AGENT_TOKEN } from "../config/env.js";
+import { getRelayHttpUrl, getToken, getRelayUrl } from "../config/env.js";
 import { validatePorts } from "../utils/validate-port.js";
-import { logger } from "../ui/logger.js";
+import { verifyApiKey } from "../utils/verify-api-key.js";
 import { Dashboard } from "../ui/dashboard.js";
+import { clearTerminal } from "../utils/terminal.js";
+import chalk from "chalk";
 
-export function httpCommand(ports: string[]) {
+export async function httpCommand(ports: string[]) {
 
     const parsedPorts = ports.map(Number);
 
     validatePorts(parsedPorts);
 
+    const token = getToken();
+
+    if (!token) {
+        clearTerminal();
+        console.log();
+        console.log(chalk.red("  No API key found."));
+        console.log();
+        console.log(`  Run ${chalk.cyan("routiq login")} to authenticate.`);
+        console.log();
+        process.exit(1);
+    }
+
+    const result = await verifyApiKey(token);
+
+    if (!result.ok) {
+        clearTerminal();
+        console.log();
+        if (result.reason === "invalid") {
+            console.log(chalk.red("  Invalid API key."));
+            console.log(`  Run ${chalk.cyan("routiq login")} to re-authenticate.`);
+        } else {
+            console.log(chalk.red("  Could not reach the relay."));
+            console.log(chalk.dim(`  ${getRelayHttpUrl()}`));
+        }
+        console.log();
+        process.exit(1);
+    }
+
+    const relayUrl = getRelayUrl();
     const dashboard = new Dashboard();
+    dashboard.start();
 
-    dashboard.setRelay(RELAY_URL!);
-
+    dashboard.setRelay(relayUrl);
 
     const agent = startAgent({
 
         ports: parsedPorts,
-        relayUrl: RELAY_URL!,
-        token: AGENT_TOKEN!,
+        relayUrl,
+        token,
 
         onConnecting() {
             dashboard.setStatus("Connecting...");
@@ -56,8 +87,19 @@ export function httpCommand(ports: string[]) {
             dashboard.setStatus(`Error: ${error.message}`);
         },
 
+        onAuthFailed() {
+            dashboard.dispose();
+            clearTerminal();
+            console.log();
+            console.log(chalk.red("  Authentication failed."));
+            console.log(`  Run ${chalk.cyan("routiq login")} to re-authenticate.`);
+            console.log();
+            process.exit(1);
+        },
+
         onStopped() {
-            console.clear();
+            dashboard.dispose();
+            clearTerminal();
 
             console.log();
             console.log("👋  Thanks for using Routiq.");
