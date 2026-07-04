@@ -1,14 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import type { Session } from "next-auth";
 import { motion } from "framer-motion";
-import { Github, ArrowRight, Copy, Check } from "lucide-react";
+import { Github, Copy, Check, ArrowRight } from "lucide-react";
 import { useState } from "react";
 import { HeroTerminal } from "@/components/terminal/hero-terminal";
 import { AnimatedButton } from "@/components/animated-button";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { fadeInUp, slideInLeft, slideInRight } from "@/lib/animations";
 
-export function Hero() {
+interface HeroProps {
+  user?: Session["user"] | null;
+  callbackUrl?: string;
+}
+
+export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
   const [copied, setCopied] = useState(false);
 
   const copyInstall = async () => {
@@ -57,14 +64,21 @@ export function Hero() {
 
             <motion.div
               variants={fadeInUp}
-              className="mt-8 flex flex-wrap items-stretch gap-4"
+              className="mt-8 flex flex-wrap items-center gap-4"
             >
-              <AnimatedButton size="lg" asChild>
-                <Link href="#cta">
-                  Get Started
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </AnimatedButton>
+              {user ? (
+                <AnimatedButton size="lg" asChild>
+                  <Link href="/dashboard">
+                    Go to Dashboard
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </AnimatedButton>
+              ) : (
+                <GoogleSignInButton
+                  callbackUrl={callbackUrl}
+                  animated
+                />
+              )}
               <AnimatedButton size="lg" variant="secondary" asChild>
                 <a
                   href="https://github.com/ayush844/Routiq"

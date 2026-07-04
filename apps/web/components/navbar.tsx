@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import type { Session } from "next-auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { Github, Menu, X } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { AnimatedButton } from "@/components/animated-button";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +18,12 @@ const navLinks = [
   { label: "Pricing", href: "#pricing" },
 ];
 
-export function Navbar() {
+interface NavbarProps {
+  user?: Session["user"] | null;
+  callbackUrl?: string;
+}
+
+export function Navbar({ user, callbackUrl = "/dashboard" }: NavbarProps) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -82,9 +89,19 @@ export function Navbar() {
                 GitHub
               </a>
             </Button>
-            <AnimatedButton size="sm" asChild>
-              <Link href="#cta">Get Started</Link>
-            </AnimatedButton>
+            {user ? (
+              <AnimatedButton size="sm" asChild>
+                <Link href="/dashboard">Dashboard</Link>
+              </AnimatedButton>
+            ) : (
+              <GoogleSignInButton
+                callbackUrl={callbackUrl}
+                size="sm"
+                variant="default"
+                label="Sign in"
+                animated
+              />
+            )}
           </div>
 
           <button
@@ -135,11 +152,20 @@ export function Navbar() {
                   <Github className="h-5 w-5" />
                   GitHub
                 </a>
-                <AnimatedButton asChild>
-                  <Link href="#cta" onClick={() => setMobileOpen(false)}>
-                    Get Started
-                  </Link>
-                </AnimatedButton>
+                {user ? (
+                  <AnimatedButton asChild>
+                    <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
+                      Dashboard
+                    </Link>
+                  </AnimatedButton>
+                ) : (
+                  <GoogleSignInButton
+                    callbackUrl={callbackUrl}
+                    size="lg"
+                    variant="default"
+                    className="w-full"
+                  />
+                )}
               </nav>
             </motion.div>
           </motion.div>

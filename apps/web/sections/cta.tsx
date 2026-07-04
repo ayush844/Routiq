@@ -1,13 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import type { Session } from "next-auth";
 import { motion } from "framer-motion";
-import { Github, ArrowRight } from "lucide-react";
+import { ArrowRight, Github } from "lucide-react";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { AnimatedButton } from "@/components/animated-button";
 import { Button } from "@/components/ui/button";
 import { fadeInUp, viewportOnce } from "@/lib/animations";
 
-export function Cta() {
+interface CtaProps {
+  user?: Session["user"] | null;
+  callbackUrl?: string;
+}
+
+const ctaButtonClass =
+  "border-[1.5px] border-white bg-white text-ink hover:bg-canvas";
+
+const ctaOutlineClass =
+  "border-[1.5px] border-white bg-transparent text-white hover:bg-white/10";
+
+export function Cta({ user, callbackUrl = "/dashboard" }: CtaProps) {
   return (
     <section id="cta" className="relative py-24 md:py-32">
       <div className="container mx-auto max-w-7xl px-6 lg:px-8">
@@ -32,16 +45,29 @@ export function Cta() {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-              <AnimatedButton size="lg" variant="signal" asChild>
-                <Link href="#">
-                  Get Started
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </AnimatedButton>
+              {user ? (
+                <AnimatedButton
+                  size="lg"
+                  className={ctaButtonClass}
+                  asChild
+                  wrapperClassName="inline-flex"
+                >
+                  <Link href="/dashboard">
+                    Go to Dashboard
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </AnimatedButton>
+              ) : (
+                <GoogleSignInButton
+                  callbackUrl={callbackUrl}
+                  variant="secondary"
+                  className={ctaButtonClass}
+                />
+              )}
               <Button
                 variant="secondary"
                 size="lg"
-                className="border-white/30 bg-transparent text-white hover:bg-white/10"
+                className={ctaOutlineClass}
                 asChild
               >
                 <a
