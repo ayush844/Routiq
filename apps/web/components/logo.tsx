@@ -21,14 +21,14 @@ export function Logo({ className, size = "md", variant = "light" }: LogoProps) {
     <div className={cn("flex items-center gap-2.5", className)}>
       <div
         className={cn(
-          "relative flex items-center justify-center rounded-xl bg-ink shadow-md",
+          "relative flex items-center justify-center rounded-xl bg-signal shadow-md",
           sizes[size].icon
         )}
       >
         <svg
           viewBox="0 0 24 24"
           fill="none"
-          className="h-[55%] w-[55%] text-canvas"
+          className="h-[55%] w-[55%] text-white"
           aria-hidden="true"
         >
           <path
