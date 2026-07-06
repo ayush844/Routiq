@@ -18,11 +18,11 @@ export const metadata: Metadata = {
     "Securely expose localhost to the internet through a simple CLI. Fast, secure, and built for developers.",
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.ico", sizes: "32x32" },
       { url: "/icon.png", type: "image/png", sizes: "32x32" },
     ],
     shortcut: "/favicon.ico",
-    apple: "/icon.png",
+    apple: "/apple-icon.png",
   },
   openGraph: {
     title: "Routiq — Expose localhost to the internet",

@@ -23,6 +23,8 @@ export interface AgentConfig {
 
     onError?(error: Error): void;
 
+    onAuthFailed?(): void;
+
     onStopped?(): void;
 
     onRequest?(request: {
@@ -41,6 +43,7 @@ export function startAgent(config: AgentConfig): Agent {
 
   let reconnectDelay = 2000;
   let shuttingDown = false;
+  let authFailed = false;
   let reconnectTimer: NodeJS.Timeout | null = null;
   let ws: WebSocket | null = null;
   let connectionId = 0;
@@ -115,12 +118,11 @@ export function startAgent(config: AgentConfig): Agent {
           }
 
           case "AUTH_FAILED":
-            config.onError?.(
-              new Error("Authentication failed")
-            );
-
-            socket.close()
-            break
+            authFailed = true;
+            shuttingDown = true;
+            config.onAuthFailed?.();
+            socket.close();
+            break;
 
           case "TUNNEL_CREATED": {
             const tunnel = message as TunnelCreatedMessage;
@@ -204,7 +206,9 @@ export function startAgent(config: AgentConfig): Agent {
       tunnels.clear();
 
       if (shuttingDown) {
-        config.onStopped?.();
+        if (!authFailed) {
+          config.onStopped?.();
+        }
         return;
       }
 
