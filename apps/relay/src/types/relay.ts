@@ -13,12 +13,17 @@ export type ClientState = {
     lastPongAt: number
 }
 
-export type Tunnel = {
+export type TunnelMeta = {
   tunnelId: string
   subdomain: string
   localPort: number
   protocol: "http" | "tcp"
   ownerId: string
+  relayId: string
+  createdAt: number
+}
+
+export type Tunnel = TunnelMeta & {
   ws: WebSocket
 }
 

@@ -1,5 +1,4 @@
 import { WebSocketServer, WebSocket } from "ws"
-import dotenv from "dotenv"
 import { randomUUID } from "crypto"
 import {
   AuthFailedMessage,
@@ -15,18 +14,34 @@ import {
   TunnelCreatedMessage
 } from "@routiq/shared"
 import Fastify from "fastify"
-import { ClientState, Tunnel, TunnelParams } from "./types/relay.js"
-import { subdomainToTunnelId, tunnels } from "./stores/tunnels.js"
+import { ClientState, TunnelParams } from "./types/relay.js"
+import {
+  getTunnelIdBySubdomain,
+  getTunnelMeta,
+  isTunnelOnThisRelay,
+  registerTunnel,
+  removeDuplicateTunnels,
+  removeTunnel,
+  resolveTunnel,
+  resolveTunnelBySubdomain,
+} from "./stores/tunnel-store.js"
 import { pendingRequests } from "./stores/requests.js"
 import { validateToken, validateApiKey } from "./services/auth.service.js"
+import { connectRedis } from "./services/redis.js"
 import { forwardRequest } from "./http/forward-request.js"
-import { TOKEN_SECRET } from "./config/env.js"
-
-dotenv.config()
+import { getRelayId, REDIS_URL, TOKEN_SECRET } from "./config/env.js"
 
 if (!TOKEN_SECRET && !process.env.DATABASE_URL) {
     throw new Error("TOKEN_SECRET or DATABASE_URL is required")
 }
+
+if (!REDIS_URL) {
+    throw new Error("REDIS_URL is required")
+}
+
+await connectRedis(REDIS_URL)
+
+console.log(`Relay ID: ${getRelayId()}`)
 
 const wss = new WebSocketServer({
     port: 8080
@@ -139,27 +154,21 @@ wss.on("connection", (ws) => {
 
             const createTunnel = message as CreateTunnelMessage
 
-            for (const [existingId, existing] of tunnels.entries()) {
-              if (
-                existing.ownerId === client.user!.userId &&
-                existing.localPort === createTunnel.localPort
-              ) {
-                subdomainToTunnelId.delete(existing.subdomain);
-                tunnels.delete(existingId);
-              }
-            }
+            await removeDuplicateTunnels(
+              client.user!.userId,
+              createTunnel.localPort
+            );
 
-            const tunnel: Tunnel = {
+            const tunnelMeta = await registerTunnel(
+              {
                 tunnelId,
                 subdomain,
                 localPort: createTunnel.localPort,
                 protocol: createTunnel.protocol,
                 ownerId: client.user!.userId,
-                ws
-            }
-
-            tunnels.set(tunnelId, tunnel);
-            subdomainToTunnelId.set(subdomain, tunnelId);
+              },
+              ws
+            );
 
             client.tunnelIds.push(tunnelId);
 
@@ -168,7 +177,7 @@ wss.on("connection", (ws) => {
               type: "TUNNEL_CREATED",
               tunnelId,
               url: `${subdomain}.routiq.dev`,
-              port: tunnel.localPort
+              port: tunnelMeta.localPort
             }
 
             ws.send(
@@ -324,18 +333,14 @@ wss.on("connection", (ws) => {
     }
   })
 
-  ws.on("close", () => {
+  ws.on("close", async () => {
 
     clearInterval(healthBeatInterval);
     clearInterval(healthCheckInterval);
 
     for (const tunnelId of client.tunnelIds) {
-        const tunnel = tunnels.get(tunnelId);
-        if (tunnel) {
-          subdomainToTunnelId.delete(tunnel.subdomain);
-          tunnels.delete(tunnelId);
-          console.log(`Deleted tunnel ${tunnelId}`);
-        }
+        await removeTunnel(tunnelId);
+        console.log(`Deleted tunnel ${tunnelId}`);
     }
     console.log(
       "Client disconnected"
@@ -355,7 +360,7 @@ console.log("Relay running on ws://localhost:8080")
 
 const handler = async (req: any, reply: any) => {
 
-  const tunnel = tunnels.get(req.params.tunnelId);
+  const tunnel = await resolveTunnel(req.params.tunnelId);
   if(!tunnel) {
     reply.status(404).send("Tunnel not found");
     return;
@@ -411,17 +416,27 @@ app.all("/*", async (req, reply) => {
   const subdomain = host?.split(".")[0];
   console.log("subdomain is: ",subdomain);
 
-  const tunnelId = subdomainToTunnelId.get(subdomain!)
-
-  if (!tunnelId) {
-    return reply
-      .status(404)
-      .send("Subdomain not found")
-  }
-
-  const tunnel = tunnels.get(tunnelId)
+  const tunnel = await resolveTunnelBySubdomain(subdomain!)
 
   if (!tunnel) {
+    const tunnelId = await getTunnelIdBySubdomain(subdomain!)
+
+    if (tunnelId) {
+      const meta = await getTunnelMeta(tunnelId)
+
+      if (meta && !isTunnelOnThisRelay(meta)) {
+        return reply
+          .status(503)
+          .send("Tunnel is on another relay instance")
+      }
+    }
+
+    if (!tunnelId) {
+      return reply
+        .status(404)
+        .send("Subdomain not found")
+    }
+
     return reply
       .status(404)
       .send("Tunnel not found")
