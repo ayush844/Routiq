@@ -16,17 +16,20 @@ function getPool(): pg.Pool {
   return pool;
 }
 
-export async function queryApiKeyUserId(
+export async function queryApiKeyUser(
   keyHash: string
-): Promise<string | null> {
+): Promise<{ userId: string; plan: string } | null> {
   const result = await getPool().query(
-    `SELECT "userId" FROM "ApiKey" WHERE "keyHash" = $1 AND "revokedAt" IS NULL`,
+    `SELECT k."userId", u."plan"
+     FROM "ApiKey" k
+     JOIN "User" u ON u."id" = k."userId"
+     WHERE k."keyHash" = $1 AND k."revokedAt" IS NULL`,
     [keyHash]
   );
 
   if (result.rows.length === 0) return null;
 
-  return result.rows[0].userId;
+  return { userId: result.rows[0].userId, plan: result.rows[0].plan };
 }
 
 export async function updateApiKeyLastUsed(keyHash: string): Promise<void> {

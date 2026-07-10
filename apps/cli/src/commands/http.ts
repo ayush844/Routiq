@@ -71,10 +71,25 @@ export async function httpCommand(ports: string[]) {
                 tunnel.port,
                 tunnel.url
             );
+            dashboard.setStatus("Connected");
+        },
+
+        onTunnelOffline(reason) {
+            dashboard.setStatus("Tunnel offline — reconnecting...");
+        },
+
+        onTunnelExpired(info) {
+            dashboard.dispose();
+            clearTerminal();
+            console.log();
+            console.log(chalk.red("  Tunnel expired."));
+            console.log(`  ${info.reason}`);
+            console.log();
+            process.exit(1);
         },
 
         onDisconnected() {
-            dashboard.setStatus("Disconnected");
+            dashboard.setStatus("Tunnel offline — reconnecting...");
         },
 
         onReconnect(delay) {
@@ -93,6 +108,19 @@ export async function httpCommand(ports: string[]) {
             console.log();
             console.log(chalk.red("  Authentication failed."));
             console.log(`  Run ${chalk.cyan("routiq login")} to re-authenticate.`);
+            console.log();
+            process.exit(1);
+        },
+
+        onRateLimited(info) {
+            dashboard.dispose();
+            clearTerminal();
+            console.log();
+            console.log(chalk.red("  Rate limit reached."));
+            console.log(`  ${info.reason}`);
+            if (info.retryAfter) {
+                console.log(chalk.dim(`  Try again in ${info.retryAfter}s.`));
+            }
             console.log();
             process.exit(1);
         },

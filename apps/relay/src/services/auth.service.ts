@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { JwtPayload } from "../types/relay.js";
-import { queryApiKeyUserId, updateApiKeyLastUsed } from "./db.js";
+import { queryApiKeyUser, updateApiKeyLastUsed } from "./db.js";
 
 export function validateToken(
   token: string,
@@ -27,14 +27,14 @@ export function validateToken(
 
 export async function validateApiKey(
   token: string
-): Promise<{ userId: string } | null> {
+): Promise<{ userId: string; plan: string } | null> {
   const hash = crypto.createHash("sha256").update(token).digest("hex");
 
-  const userId = await queryApiKeyUserId(hash);
+  const user = await queryApiKeyUser(hash);
 
-  if (!userId) return null;
+  if (!user) return null;
 
   updateApiKeyLastUsed(hash);
 
-  return { userId };
+  return user;
 }

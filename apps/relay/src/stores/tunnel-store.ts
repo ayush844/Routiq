@@ -66,6 +66,86 @@ export async function removeTunnel(tunnelId: string): Promise<void> {
   await pipeline.exec();
 }
 
+export async function refreshTunnelsTTL(tunnelIds: string[]): Promise<void> {
+  for (const tunnelId of tunnelIds) {
+    const meta = await getTunnelMeta(tunnelId);
+    if (meta) await refreshTunnelTTL(meta);
+  }
+}
+
+async function refreshTunnelTTL(meta: TunnelMeta): Promise<void> {
+  const redis = getRedis();
+  const pipeline = redis.pipeline();
+
+  pipeline.set(
+    tunnelKey(meta.tunnelId),
+    JSON.stringify(meta),
+    "EX",
+    TUNNEL_TTL_SECONDS
+  );
+  pipeline.set(
+    subdomainKey(meta.subdomain),
+    meta.tunnelId,
+    "EX",
+    TUNNEL_TTL_SECONDS
+  );
+
+  await pipeline.exec();
+}
+
+/** Remove local WebSocket only — keep Redis metadata alive for reconnect. */
+export async function detachTunnel(tunnelId: string): Promise<void> {
+  localSockets.delete(tunnelId);
+
+  const meta = await getTunnelMeta(tunnelId);
+  if (!meta) return;
+
+  await refreshTunnelTTL(meta);
+}
+
+/** Re-bind a live WebSocket to an existing tunnel (same subdomain). */
+export async function reattachTunnel(
+  tunnelId: string,
+  ws: WebSocket,
+  plan?: string
+): Promise<TunnelMeta | null> {
+  const meta = await getTunnelMeta(tunnelId);
+  if (!meta) return null;
+
+  if (plan && meta.plan !== plan) {
+    meta.plan = plan;
+  }
+
+  localSockets.set(tunnelId, ws);
+  await refreshTunnelTTL(meta);
+
+  return meta;
+}
+
+export async function findTunnelByUserAndPort(
+  userId: string,
+  localPort: number
+): Promise<TunnelMeta | null> {
+  const redis = getRedis();
+  const tunnelIds = await redis.smembers(userTunnelsKey(userId));
+
+  for (const tunnelId of tunnelIds) {
+    const raw = await redis.get(tunnelKey(tunnelId));
+    if (!raw) {
+      await redis.srem(userTunnelsKey(userId), tunnelId);
+      continue;
+    }
+
+    const meta = JSON.parse(raw) as TunnelMeta;
+
+    if (meta.localPort === localPort && meta.relayId === getRelayId()) {
+      return meta;
+    }
+  }
+
+  return null;
+}
+
 export async function removeDuplicateTunnels(
   ownerId: string,
   localPort: number
@@ -83,7 +163,7 @@ export async function removeDuplicateTunnels(
     const meta = JSON.parse(raw) as TunnelMeta;
 
     if (meta.localPort === localPort && meta.relayId === getRelayId()) {
-      await removeTunnel(tunnelId);
+      await detachTunnel(tunnelId);
     }
   }
 }
@@ -130,4 +210,8 @@ export function isTunnelOnThisRelay(meta: TunnelMeta): boolean {
 
 export async function listUserTunnelIds(userId: string): Promise<string[]> {
   return getRedis().smembers(userTunnelsKey(userId));
+}
+
+export async function countUserTunnels(userId: string): Promise<number> {
+  return getRedis().scard(userTunnelsKey(userId));
 }

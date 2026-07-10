@@ -9,6 +9,7 @@ export type JwtPayload = {
 export type ClientState = {
     authenticated: boolean
     user?: JwtPayload
+    plan: string
     tunnelIds: string[]
     lastPongAt: number
 }
@@ -19,6 +20,7 @@ export type TunnelMeta = {
   localPort: number
   protocol: "http" | "tcp"
   ownerId: string
+  plan: string
   relayId: string
   createdAt: number
 }
