@@ -1,5 +1,5 @@
 import WebSocket from "ws"
-import {AuthMessage, AuthSuccessMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, PongMessage, RateLimitedMessage, TunnelCreatedMessage, TunnelExpiredMessage, TunnelOfflineMessage} from "@routiq/shared"
+import {AuthMessage, AuthSuccessMessage, BandwidthExceededMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, PongMessage, RateLimitedMessage, TunnelCreatedMessage, TunnelExpiredMessage, TunnelOfflineMessage} from "@routiq/shared"
 import { tunnels } from "./stores/tunnels.js"
 import { handleHttpRequest } from "./services/local-request.service.js"
 import {pong} from "./handlers/ping.handler.js"
@@ -20,6 +20,12 @@ export interface AgentConfig {
     onTunnelOffline?(reason: string): void;
 
     onTunnelExpired?(info: { reason: string; tunnelId?: string }): void;
+
+    onBandwidthExceeded?(info: {
+      reason: string;
+      usedBytes: number;
+      limitBytes: number;
+    }): void;
 
     onDisconnected?(): void;
 
@@ -52,6 +58,7 @@ export function startAgent(config: AgentConfig): Agent {
   let authFailed = false;
   let rateLimited = false;
   let tunnelExpired = false;
+  let bandwidthNotified = false;
   let reconnectTimer: NodeJS.Timeout | null = null;
   let ws: WebSocket | null = null;
   let connectionId = 0;
@@ -116,6 +123,7 @@ export function startAgent(config: AgentConfig): Agent {
           case "AUTH_SUCCESS": {
             const authSuccess = message as AuthSuccessMessage
 
+            bandwidthNotified = false;
             config.onAuthenticated?.(authSuccess.userId);
 
             for (const port of config.ports) {
@@ -168,6 +176,21 @@ export function startAgent(config: AgentConfig): Agent {
               tunnelId: expired.tunnelId,
             });
             socket.close();
+            break;
+          }
+
+          case "BANDWIDTH_EXCEEDED": {
+            const bandwidth = message as BandwidthExceededMessage;
+
+            if (!bandwidthNotified) {
+              bandwidthNotified = true;
+              config.onBandwidthExceeded?.({
+                reason: bandwidth.reason,
+                usedBytes: bandwidth.usedBytes,
+                limitBytes: bandwidth.limitBytes,
+              });
+            }
+
             break;
           }
 

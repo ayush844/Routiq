@@ -4,6 +4,7 @@ import {
   AuthFailedMessage,
   AuthMessage,
   AuthSuccessMessage,
+  BandwidthExceededMessage,
   CreateTunnelMessage,
   HttpRequestMessage,
   HttpResponseChunkMessage,
@@ -17,7 +18,7 @@ import {
   TunnelOfflineMessage,
 } from "@routiq/shared"
 import Fastify from "fastify"
-import { ClientState, TunnelParams } from "./types/relay.js"
+import { ClientState, Tunnel, TunnelParams } from "./types/relay.js"
 import {
   countUserTunnels,
   detachTunnel,
@@ -35,6 +36,7 @@ import { pendingRequests } from "./stores/requests.js"
 import { validateToken, validateApiKey } from "./services/auth.service.js"
 import { connectRedis } from "./services/redis.js"
 import { checkRateLimit, retryAfterSeconds } from "./services/rate-limit.js"
+import { buildBandwidthExceededMessage, isOverBandwidthQuota, recordBandwidth } from "./services/bandwidth.js"
 import { GLOBAL_LIMITS, getPlanLimits } from "./config/limits.js"
 import { forwardRequest } from "./http/forward-request.js"
 import { getRelayId, REDIS_URL, TOKEN_SECRET } from "./config/env.js"
@@ -314,7 +316,6 @@ wss.on("connection", (ws, req) => {
         }
 
         case "HTTP_RESPONSE": {
-          console.log("Received HTTP_RESPONSE", message)
           const pendingRequest = pendingRequests.get(message.requestId);
           if(!pendingRequest) {
             console.error(`No pending request found for requestId ${message.requestId}`);
@@ -323,22 +324,19 @@ wss.on("connection", (ws, req) => {
 
           clearTimeout(pendingRequest.timeout)
 
+          const responseBytes = message.body
+            ? Buffer.byteLength(message.body, "utf8")
+            : 0
+
+          await recordBandwidth(
+            pendingRequest.ownerId,
+            pendingRequest.requestBytes + responseBytes
+          )
+
           pendingRequest.reply.status(message.status).headers(message.headers).send(message.body);
 
           pendingRequests.delete(message.requestId)
 
-
-          // setTimeout(() => {
-          //   const reply = pendingRequests.get(message.requestId)
-
-          //   if (!reply) return
-
-          //   reply
-          //     .status(504)
-          //     .send("Tunnel timeout")
-
-          //     pendingRequests.delete(message.requestId)
-          //   }, 30000)
           break;
         }
 
@@ -386,12 +384,10 @@ wss.on("connection", (ws, req) => {
 
           }, 30000)
 
-          pendingRequest.reply.raw.write(
-            Buffer.from(
-              httpMessage.chunk,
-              "base64"
-            )
-          )
+          const chunk = Buffer.from(httpMessage.chunk, "base64")
+
+          pendingRequest.reply.raw.write(chunk)
+          pendingRequest.responseBytes += chunk.length
 
           break;
 
@@ -406,6 +402,11 @@ wss.on("connection", (ws, req) => {
           }
 
           clearTimeout(pendingRequest.timeout);
+
+          await recordBandwidth(
+            pendingRequest.ownerId,
+            pendingRequest.requestBytes + pendingRequest.responseBytes
+          )
 
           pendingRequest.reply.raw.end();
 
@@ -476,6 +477,24 @@ wss.on("connection", (ws, req) => {
 
 console.log("Relay running on ws://localhost:8080")
 
+async function rejectBandwidthExceeded(tunnel: Tunnel, reply: any) {
+  if (tunnel.ws.readyState === WebSocket.OPEN) {
+    const payload = await buildBandwidthExceededMessage(
+      tunnel.ownerId,
+      tunnel.plan
+    )
+
+    const msg: BandwidthExceededMessage = {
+      type: "BANDWIDTH_EXCEEDED",
+      ...payload,
+    }
+
+    tunnel.ws.send(JSON.stringify(msg))
+  }
+
+  return reply.status(429).send("Daily bandwidth limit exceeded")
+}
+
 
 const handler = async (req: any, reply: any) => {
 
@@ -484,8 +503,10 @@ const handler = async (req: any, reply: any) => {
     reply.status(404).send("Tunnel not found");
     return;
   }
-  console.log(`Received request for tunnel ${req.params.tunnelId}`)
-  console.log(`req url is ${req.url}`)
+
+  if (await isOverBandwidthQuota(tunnel.ownerId, tunnel.plan)) {
+    return rejectBandwidthExceeded(tunnel, reply)
+  }
 
   return forwardRequest(
     tunnel,
@@ -593,6 +614,10 @@ app.all("/*", async (req, reply) => {
       .status(429)
       .header("Retry-After", retryAfterSeconds(httpLimit.resetAt))
       .send("Rate limit exceeded for this tunnel");
+  }
+
+  if (await isOverBandwidthQuota(tunnel.ownerId, tunnel.plan)) {
+    return rejectBandwidthExceeded(tunnel, reply)
   }
 
   return forwardRequest(tunnel, req, reply);

@@ -3,11 +3,14 @@ export type PlanTier = "free" | "pro";
 export interface PlanLimits {
   activeTunnels: number;
   httpPerMin: number;
+  bandwidthPerDayBytes: number;
 }
 
+const GB = 1024 * 1024 * 1024;
+
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
-  free: { activeTunnels: 3, httpPerMin: 100 },
-  pro: { activeTunnels: 25, httpPerMin: 2000 },
+  free: { activeTunnels: 3, httpPerMin: 2000, bandwidthPerDayBytes: 5 * GB },
+  pro: { activeTunnels: 25, httpPerMin: 5000, bandwidthPerDayBytes: 100 * GB },
 };
 
 export const GLOBAL_LIMITS = {

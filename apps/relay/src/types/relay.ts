@@ -38,4 +38,7 @@ export type PendingRequest = {
   reply: FastifyReply
   timeout: NodeJS.Timeout
   createdAt: number
+  ownerId: string
+  requestBytes: number
+  responseBytes: number
 }

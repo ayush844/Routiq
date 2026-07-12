@@ -46,6 +46,8 @@ export async function httpCommand(ports: string[]) {
 
     dashboard.setRelay(relayUrl);
 
+    let bandwidthLimited = false;
+
     const agent = startAgent({
 
         ports: parsedPorts,
@@ -62,8 +64,12 @@ export async function httpCommand(ports: string[]) {
         },
 
         onAuthenticated(userId) {
-            dashboard.setStatus("Connected");
             dashboard.setUser(userId);
+            dashboard.setStatus(
+                bandwidthLimited
+                    ? chalk.red("Bandwidth limit reached")
+                    : "Connected"
+            );
         },
 
         onTunnelCreated(tunnel) {
@@ -71,7 +77,9 @@ export async function httpCommand(ports: string[]) {
                 tunnel.port,
                 tunnel.url
             );
-            dashboard.setStatus("Connected");
+            if (!bandwidthLimited) {
+                dashboard.setStatus("Connected");
+            }
         },
 
         onTunnelOffline(reason) {
@@ -86,6 +94,17 @@ export async function httpCommand(ports: string[]) {
             console.log(`  ${info.reason}`);
             console.log();
             process.exit(1);
+        },
+
+        onBandwidthExceeded(info) {
+            bandwidthLimited = true;
+            dashboard.setStatus(chalk.red("Bandwidth limit reached"));
+            dashboard.addRequest({
+                method: "LIMIT",
+                path: info.reason,
+                status: 429,
+                duration: 0,
+            });
         },
 
         onDisconnected() {
@@ -138,6 +157,10 @@ export async function httpCommand(ports: string[]) {
         },
 
         onRequest(request) {
+            if (bandwidthLimited) {
+                bandwidthLimited = false;
+                dashboard.setStatus("Connected");
+            }
             dashboard.addRequest(request);
         }
     });

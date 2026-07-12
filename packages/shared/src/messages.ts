@@ -44,6 +44,13 @@ export interface TunnelExpiredMessage {
   tunnelId?: string
 }
 
+export interface BandwidthExceededMessage {
+  type: "BANDWIDTH_EXCEEDED"
+  reason: string
+  usedBytes: number
+  limitBytes: number
+}
+
 export interface HttpRequestMessage{
   type: "HTTP_REQUEST",
   requestId: string,
