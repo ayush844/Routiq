@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { JwtPayload } from "../types/relay.js";
 import { queryApiKeyUser, updateApiKeyLastUsed } from "./db.js";
+import { cacheApiKeyUser, lookupApiKeyCache } from "./api-key-cache.js";
 
 export function validateToken(
   token: string,
@@ -30,11 +31,26 @@ export async function validateApiKey(
 ): Promise<{ userId: string; plan: string } | null> {
   const hash = crypto.createHash("sha256").update(token).digest("hex");
 
-  const user = await queryApiKeyUser(hash);
+  const cached = await lookupApiKeyCache(hash);
 
-  if (!user) return null;
+  if (cached === "invalid") return null;
 
-  updateApiKeyLastUsed(hash);
+  if (cached !== "miss") {
+    return cached;
+  }
 
-  return user;
+  try {
+    const user = await queryApiKeyUser(hash);
+
+    await cacheApiKeyUser(hash, user);
+
+    if (user) {
+      updateApiKeyLastUsed(hash);
+    }
+
+    return user;
+  } catch (error) {
+    console.error("API key DB lookup failed:", error);
+    return null;
+  }
 }

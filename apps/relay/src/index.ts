@@ -447,10 +447,7 @@ wss.on("connection", (ws, req) => {
         }
       }
     } catch (error) {
-      console.error(
-        "Failed to parse message:",
-        error
-      )
+      console.error("WebSocket message handler error:", error)
     }
   })
 

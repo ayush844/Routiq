@@ -7,6 +7,7 @@ function getPool(): pg.Pool {
     pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
       idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
       max: 3,
     });
     pool.on("error", (err) => {
