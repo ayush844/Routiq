@@ -1,0 +1,8 @@
+node_modules
+.git
+**/.git
+**/dist
+**/.env
+apps/web
+.cursor
+terminals

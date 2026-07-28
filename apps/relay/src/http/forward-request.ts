@@ -2,7 +2,7 @@ import { randomUUID } from "crypto"
 import { Tunnel } from "../types/relay.js"
 import { pendingRequests } from "../stores/requests.js"
 
-function estimateRequestBytes(req: any, body?: string): number {
+export function estimateRequestBytes(req: any, body?: string): number {
   let size = body ? Buffer.byteLength(body, "utf8") : 0
 
   const contentLength = req.headers["content-length"]

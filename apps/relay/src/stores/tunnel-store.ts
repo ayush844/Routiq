@@ -116,6 +116,7 @@ export async function reattachTunnel(
     meta.plan = plan;
   }
 
+  meta.relayId = getRelayId();
   localSockets.set(tunnelId, ws);
   await refreshTunnelTTL(meta);
 
@@ -138,7 +139,7 @@ export async function findTunnelByUserAndPort(
 
     const meta = JSON.parse(raw) as TunnelMeta;
 
-    if (meta.localPort === localPort && meta.relayId === getRelayId()) {
+    if (meta.localPort === localPort) {
       return meta;
     }
   }

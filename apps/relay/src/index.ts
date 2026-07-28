@@ -25,7 +25,6 @@ import {
   findTunnelByUserAndPort,
   getTunnelIdBySubdomain,
   getTunnelMeta,
-  isTunnelOnThisRelay,
   reattachTunnel,
   refreshTunnelsTTL,
   registerTunnel,
@@ -34,12 +33,32 @@ import {
 } from "./stores/tunnel-store.js"
 import { pendingRequests } from "./stores/requests.js"
 import { validateToken, validateApiKey } from "./services/auth.service.js"
-import { connectRedis } from "./services/redis.js"
+import { connectRedis, disconnectRedis } from "./services/redis.js"
+import {
+  connectPubSub,
+  disconnectPubSub,
+  requestsChannel,
+} from "./services/redis-pubsub.js"
+import {
+  handleIncomingRelayRequest,
+  handleIncomingRelayResponse,
+  relayForwardResponse,
+  relayForwardResponseChunk,
+  relayForwardResponseEnd,
+  relayForwardResponseStart,
+  routeHttpRequest,
+} from "./services/relay-http.js"
 import { checkRateLimit, retryAfterSeconds } from "./services/rate-limit.js"
 import { buildBandwidthExceededMessage, isOverBandwidthQuota, recordBandwidth } from "./services/bandwidth.js"
 import { GLOBAL_LIMITS, getPlanLimits } from "./config/limits.js"
-import { forwardRequest } from "./http/forward-request.js"
-import { getRelayId, REDIS_URL, TOKEN_SECRET } from "./config/env.js"
+import {
+  buildTunnelUrl,
+  getRelayId,
+  HTTP_PORT,
+  REDIS_URL,
+  TOKEN_SECRET,
+  WS_PORT,
+} from "./config/env.js"
 
 if (!TOKEN_SECRET && !process.env.DATABASE_URL) {
     throw new Error("TOKEN_SECRET or DATABASE_URL is required")
@@ -51,10 +70,24 @@ if (!REDIS_URL) {
 
 await connectRedis(REDIS_URL)
 
+await connectPubSub(REDIS_URL, getRelayId(), (channel, payload) => {
+  try {
+    if (channel === requestsChannel(getRelayId())) {
+      void handleIncomingRelayRequest(JSON.parse(payload))
+      return
+    }
+
+    void handleIncomingRelayResponse(payload)
+  } catch (error) {
+    console.error("Pub/sub message handler error:", error)
+  }
+})
+
 console.log(`Relay ID: ${getRelayId()}`)
 
 const wss = new WebSocketServer({
-    port: 8080
+  port: WS_PORT,
+  host: "0.0.0.0",
 })
 
 
@@ -62,7 +95,7 @@ const ping:PingMessage = {
   type: "PING"
 }
 
-const app = Fastify()
+const app = Fastify({ trustProxy: true })
 
 wss.on("connection", (ws, req) => {
   console.log("Client connected");
@@ -251,7 +284,7 @@ wss.on("connection", (ws, req) => {
               const tunnelCreated: TunnelCreatedMessage = {
                 type: "TUNNEL_CREATED",
                 tunnelId: tunnelMeta.tunnelId,
-                url: `${tunnelMeta.subdomain}.routiq.dev`,
+                url: buildTunnelUrl(tunnelMeta.subdomain),
                 port: tunnelMeta.localPort,
               }
 
@@ -296,7 +329,7 @@ wss.on("connection", (ws, req) => {
             const tunnelCreated: TunnelCreatedMessage = {
               type: "TUNNEL_CREATED",
               tunnelId,
-              url: `${subdomain}.routiq.dev`,
+              url: buildTunnelUrl(subdomain),
               port: tunnelMeta.localPort
             }
 
@@ -310,12 +343,23 @@ wss.on("connection", (ws, req) => {
 
             console.log(`Subdomain: ${subdomain}`)
 
-            console.log(`Test URL: http://${subdomain}.localhost:3001`)
+            console.log(`Test URL: ${buildTunnelUrl(subdomain)}`)
 
             break
         }
 
         case "HTTP_RESPONSE": {
+          if (
+            relayForwardResponse(
+              message.requestId,
+              message.status,
+              message.headers,
+              message.body
+            )
+          ) {
+            break
+          }
+
           const pendingRequest = pendingRequests.get(message.requestId);
           if(!pendingRequest) {
             console.error(`No pending request found for requestId ${message.requestId}`);
@@ -341,6 +385,16 @@ wss.on("connection", (ws, req) => {
         }
 
         case "HTTP_RESPONSE_START": {
+          if (
+            relayForwardResponseStart(
+              message.requestId,
+              message.status,
+              message.headers
+            )
+          ) {
+            break
+          }
+
           let httpMessage = message as HttpResponseStartMessage
           const pendingRequest = pendingRequests.get(httpMessage.requestId);
 
@@ -356,6 +410,10 @@ wss.on("connection", (ws, req) => {
         }
 
         case "HTTP_RESPONSE_CHUNK": {
+
+          if (relayForwardResponseChunk(message.requestId, message.chunk)) {
+            break
+          }
 
           let httpMessage = message as HttpResponseChunkMessage;
           const pendingRequest = pendingRequests.get(httpMessage.requestId);
@@ -394,6 +452,10 @@ wss.on("connection", (ws, req) => {
         }
 
         case "HTTP_RESPONSE_END": {
+          if (relayForwardResponseEnd(message.requestId)) {
+            break
+          }
+
           let httpMessage = message as HttpResponseEndMessage;
           const pendingRequest = pendingRequests.get(httpMessage.requestId);
 
@@ -475,7 +537,7 @@ wss.on("connection", (ws, req) => {
   })
 })
 
-console.log("Relay running on ws://localhost:8080")
+console.log(`Relay ${getRelayId()} listening on ws://0.0.0.0:${WS_PORT} and http://0.0.0.0:${HTTP_PORT}`)
 
 async function rejectBandwidthExceeded(tunnel: Tunnel, reply: any) {
   if (tunnel.ws.readyState === WebSocket.OPEN) {
@@ -499,25 +561,34 @@ async function rejectBandwidthExceeded(tunnel: Tunnel, reply: any) {
 const handler = async (req: any, reply: any) => {
 
   const tunnel = await resolveTunnel(req.params.tunnelId);
-  if(!tunnel) {
+  const meta = tunnel ? null : await getTunnelMeta(req.params.tunnelId);
+
+  if (!tunnel && !meta) {
     reply.status(404).send("Tunnel not found");
     return;
   }
 
-  if (await isOverBandwidthQuota(tunnel.ownerId, tunnel.plan)) {
-    return rejectBandwidthExceeded(tunnel, reply)
+  const ownerId = tunnel?.ownerId ?? meta!.ownerId
+  const plan = tunnel?.plan ?? meta!.plan
+
+  if (await isOverBandwidthQuota(ownerId, plan)) {
+    if (tunnel) {
+      return rejectBandwidthExceeded(tunnel, reply)
+    }
+
+    return reply.status(429).send("Daily bandwidth limit exceeded")
   }
 
-  return forwardRequest(
-    tunnel,
-    req,
-    reply
-  )
+  return routeHttpRequest(tunnel, meta, req, reply)
 }
 
 app.all<{Params: TunnelParams;}>("/test/:tunnelId", handler);
 
 app.all<{Params: TunnelParams;}>("/test/:tunnelId/*", handler);
+
+app.get("/health", async (_req, reply) => {
+  return reply.send({ ok: true, relayId: getRelayId() })
+})
 
 app.get("/auth/verify", async (req, reply) => {
   const verifyLimit = await checkRateLimit(
@@ -572,40 +643,30 @@ app.all("/*", async (req, reply) => {
 
   const tunnel = await resolveTunnelBySubdomain(subdomain!)
 
+  let meta = null
+
   if (!tunnel) {
     const tunnelId = await getTunnelIdBySubdomain(subdomain!)
 
-    if (tunnelId) {
-      const meta = await getTunnelMeta(tunnelId)
-
-      if (meta && !isTunnelOnThisRelay(meta)) {
-        return reply
-          .status(503)
-          .send("Tunnel is on another relay instance")
-      }
-
-      if (meta) {
-        return reply
-          .status(503)
-          .send("Tunnel offline — run routiq http to reconnect")
-      }
-    }
-
     if (!tunnelId) {
-      return reply
-        .status(404)
-        .send("Subdomain not found")
+      return reply.status(404).send("Subdomain not found")
     }
 
-    return reply
-      .status(404)
-      .send("Tunnel not found")
+    meta = await getTunnelMeta(tunnelId)
+
+    if (!meta) {
+      return reply.status(404).send("Tunnel not found")
+    }
   }
+
+  const tunnelId = tunnel?.tunnelId ?? meta!.tunnelId
+  const plan = tunnel?.plan ?? meta!.plan
+  const ownerId = tunnel?.ownerId ?? meta!.ownerId
 
   const httpLimit = await checkRateLimit(
     "http:tunnel",
-    tunnel.tunnelId,
-    getPlanLimits(tunnel.plan).httpPerMin,
+    tunnelId,
+    getPlanLimits(plan).httpPerMin,
     60
   );
 
@@ -616,14 +677,38 @@ app.all("/*", async (req, reply) => {
       .send("Rate limit exceeded for this tunnel");
   }
 
-  if (await isOverBandwidthQuota(tunnel.ownerId, tunnel.plan)) {
-    return rejectBandwidthExceeded(tunnel, reply)
+  if (await isOverBandwidthQuota(ownerId, plan)) {
+    if (tunnel) {
+      return rejectBandwidthExceeded(tunnel, reply)
+    }
+
+    return reply.status(429).send("Daily bandwidth limit exceeded")
   }
 
-  return forwardRequest(tunnel, req, reply);
+  return routeHttpRequest(tunnel, meta, req, reply);
 })
 
 
 await app.listen({
-  port: 3001
+  port: HTTP_PORT,
+  host: "0.0.0.0",
 })
+
+let shuttingDown = false
+
+async function shutdown(signal: string) {
+  if (shuttingDown) return
+  shuttingDown = true
+
+  console.log(`${signal} received — shutting down relay ${getRelayId()}`)
+
+  wss.close()
+  await app.close()
+  await disconnectPubSub()
+  await disconnectRedis()
+
+  process.exit(0)
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"))
+process.on("SIGINT", () => void shutdown("SIGINT"))

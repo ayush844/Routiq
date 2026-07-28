@@ -12,5 +12,72 @@ services:
       timeout: 3s
       retries: 5
 
+  relay-1:
+    profiles: ["multi-relay", "prod"]
+    build:
+      context: .
+      dockerfile: apps/relay/Dockerfile
+    env_file:
+      - apps/relay/.env
+    environment:
+      RELAY_ID: relay-1
+      WS_PORT: 8081
+      HTTP_PORT: 3001
+      PUBLIC_HTTP_PORT: "443"
+      TUNNEL_DOMAIN: routiq.dev
+      PUBLIC_TUNNEL_SCHEME: https
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  relay-2:
+    profiles: ["multi-relay", "prod"]
+    build:
+      context: .
+      dockerfile: apps/relay/Dockerfile
+    env_file:
+      - apps/relay/.env
+    environment:
+      RELAY_ID: relay-2
+      WS_PORT: 8082
+      HTTP_PORT: 3002
+      PUBLIC_HTTP_PORT: "443"
+      TUNNEL_DOMAIN: routiq.dev
+      PUBLIC_TUNNEL_SCHEME: https
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    profiles: ["multi-relay"]
+    image: nginx:alpine
+    ports:
+      - "8080:8080"
+      - "3001:3001"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - relay-1
+      - relay-2
+    restart: unless-stopped
+
+  nginx-prod:
+    profiles: ["prod"]
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on:
+      - relay-1
+      - relay-2
+    restart: unless-stopped
+
 volumes:
   redis_data:
