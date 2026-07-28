@@ -46,6 +46,8 @@ export async function httpCommand(ports: string[]) {
 
     dashboard.setRelay(relayUrl);
 
+    let bandwidthLimited = false;
+
     const agent = startAgent({
 
         ports: parsedPorts,
@@ -62,8 +64,12 @@ export async function httpCommand(ports: string[]) {
         },
 
         onAuthenticated(userId) {
-            dashboard.setStatus("Connected");
             dashboard.setUser(userId);
+            dashboard.setStatus(
+                bandwidthLimited
+                    ? chalk.red("Bandwidth limit reached")
+                    : "Connected"
+            );
         },
 
         onTunnelCreated(tunnel) {
@@ -71,10 +77,38 @@ export async function httpCommand(ports: string[]) {
                 tunnel.port,
                 tunnel.url
             );
+            if (!bandwidthLimited) {
+                dashboard.setStatus("Connected");
+            }
+        },
+
+        onTunnelOffline(reason) {
+            dashboard.setStatus("Tunnel offline — reconnecting...");
+        },
+
+        onTunnelExpired(info) {
+            dashboard.dispose();
+            clearTerminal();
+            console.log();
+            console.log(chalk.red("  Tunnel expired."));
+            console.log(`  ${info.reason}`);
+            console.log();
+            process.exit(1);
+        },
+
+        onBandwidthExceeded(info) {
+            bandwidthLimited = true;
+            dashboard.setStatus(chalk.red("Bandwidth limit reached"));
+            dashboard.addRequest({
+                method: "LIMIT",
+                path: info.reason,
+                status: 429,
+                duration: 0,
+            });
         },
 
         onDisconnected() {
-            dashboard.setStatus("Disconnected");
+            dashboard.setStatus("Tunnel offline — reconnecting...");
         },
 
         onReconnect(delay) {
@@ -97,6 +131,19 @@ export async function httpCommand(ports: string[]) {
             process.exit(1);
         },
 
+        onRateLimited(info) {
+            dashboard.dispose();
+            clearTerminal();
+            console.log();
+            console.log(chalk.red("  Rate limit reached."));
+            console.log(`  ${info.reason}`);
+            if (info.retryAfter) {
+                console.log(chalk.dim(`  Try again in ${info.retryAfter}s.`));
+            }
+            console.log();
+            process.exit(1);
+        },
+
         onStopped() {
             dashboard.dispose();
             clearTerminal();
@@ -110,6 +157,10 @@ export async function httpCommand(ports: string[]) {
         },
 
         onRequest(request) {
+            if (bandwidthLimited) {
+                bandwidthLimited = false;
+                dashboard.setStatus("Connected");
+            }
             dashboard.addRequest(request);
         }
     });

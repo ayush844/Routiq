@@ -2,6 +2,17 @@ import { randomUUID } from "crypto"
 import { Tunnel } from "../types/relay.js"
 import { pendingRequests } from "../stores/requests.js"
 
+export function estimateRequestBytes(req: any, body?: string): number {
+  let size = body ? Buffer.byteLength(body, "utf8") : 0
+
+  const contentLength = req.headers["content-length"]
+  if (contentLength) {
+    size = Math.max(size, parseInt(contentLength, 10) || 0)
+  }
+
+  return size + 500
+}
+
 export async function forwardRequest(
   tunnel: Tunnel,
   req: any,
@@ -19,20 +30,21 @@ export async function forwardRequest(
     pendingRequests.delete(requestId)
   }, 30000)
 
+  const body = req.body ? JSON.stringify(req.body) : undefined
+  const requestBytes = estimateRequestBytes(req, body)
+
   pendingRequests.set(requestId, {
     reply,
     timeout,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    ownerId: tunnel.ownerId,
+    requestBytes,
+    responseBytes: 0,
   })
 
-  // const path = req.url;
   const path = req.params?.tunnelId ? req.url.replace(`/test/${req.params.tunnelId}`,"") || "/" : req.url
 
   const ws = tunnel.ws;
-
-  console.log("req body in relay is: ", req.body)
-  const body = req.body ? JSON.stringify(req.body) : undefined;
-
 
   ws.send(
     JSON.stringify({
@@ -45,7 +57,6 @@ export async function forwardRequest(
       method: req.method,
 
       path: path,
-      // path: req.url,
 
       headers: req.headers,
 

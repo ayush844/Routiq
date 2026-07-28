@@ -8,7 +8,7 @@ import { verifyApiKey } from "../utils/verify-api-key.js";
 import { clearTerminal } from "../utils/terminal.js";
 
 const DASHBOARD_URL =
-  process.env.ROUTIQ_DASHBOARD_URL || "http://localhost:3000/dashboard";
+  process.env.ROUTIQ_DASHBOARD_URL || "https://routiq.dev/dashboard";
 
 function openBrowser(url: string) {
   const cmd =

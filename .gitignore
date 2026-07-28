@@ -38,3 +38,6 @@ tmp
 temp
 
 notes/
+
+# deploy TLS certs (generate locally or via certbot on VPS)
+deploy/certs/

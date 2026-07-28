@@ -1,5 +1,5 @@
 import WebSocket from "ws"
-import {AuthMessage, AuthSuccessMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, PongMessage, TunnelCreatedMessage} from "@routiq/shared"
+import {AuthMessage, AuthSuccessMessage, BandwidthExceededMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, PongMessage, RateLimitedMessage, TunnelCreatedMessage, TunnelExpiredMessage, TunnelOfflineMessage} from "@routiq/shared"
 import { tunnels } from "./stores/tunnels.js"
 import { handleHttpRequest } from "./services/local-request.service.js"
 import {pong} from "./handlers/ping.handler.js"
@@ -17,6 +17,16 @@ export interface AgentConfig {
 
     onTunnelCreated?(tunnel: TunnelCreatedMessage): void;
 
+    onTunnelOffline?(reason: string): void;
+
+    onTunnelExpired?(info: { reason: string; tunnelId?: string }): void;
+
+    onBandwidthExceeded?(info: {
+      reason: string;
+      usedBytes: number;
+      limitBytes: number;
+    }): void;
+
     onDisconnected?(): void;
 
     onReconnect?(delay: number): void;
@@ -24,6 +34,8 @@ export interface AgentConfig {
     onError?(error: Error): void;
 
     onAuthFailed?(): void;
+
+    onRateLimited?(info: { scope: "auth" | "tunnel"; reason: string; retryAfter?: number }): void;
 
     onStopped?(): void;
 
@@ -44,6 +56,9 @@ export function startAgent(config: AgentConfig): Agent {
   let reconnectDelay = 2000;
   let shuttingDown = false;
   let authFailed = false;
+  let rateLimited = false;
+  let tunnelExpired = false;
+  let bandwidthNotified = false;
   let reconnectTimer: NodeJS.Timeout | null = null;
   let ws: WebSocket | null = null;
   let connectionId = 0;
@@ -108,6 +123,7 @@ export function startAgent(config: AgentConfig): Agent {
           case "AUTH_SUCCESS": {
             const authSuccess = message as AuthSuccessMessage
 
+            bandwidthNotified = false;
             config.onAuthenticated?.(authSuccess.userId);
 
             for (const port of config.ports) {
@@ -124,10 +140,56 @@ export function startAgent(config: AgentConfig): Agent {
             socket.close();
             break;
 
+          case "RATE_LIMITED": {
+            const rl = message as RateLimitedMessage
+            rateLimited = true;
+            shuttingDown = true;
+            config.onRateLimited?.({
+              scope: rl.scope,
+              reason: rl.reason,
+              retryAfter: rl.retryAfter,
+            });
+            socket.close();
+            break;
+          }
+
           case "TUNNEL_CREATED": {
             const tunnel = message as TunnelCreatedMessage;
             tunnels.set(tunnel.tunnelId, tunnel.port);
             config.onTunnelCreated?.(tunnel);
+
+            break;
+          }
+
+          case "TUNNEL_OFFLINE": {
+            const offline = message as TunnelOfflineMessage;
+            config.onTunnelOffline?.(offline.reason);
+            break;
+          }
+
+          case "TUNNEL_EXPIRED": {
+            const expired = message as TunnelExpiredMessage;
+            tunnelExpired = true;
+            shuttingDown = true;
+            config.onTunnelExpired?.({
+              reason: expired.reason,
+              tunnelId: expired.tunnelId,
+            });
+            socket.close();
+            break;
+          }
+
+          case "BANDWIDTH_EXCEEDED": {
+            const bandwidth = message as BandwidthExceededMessage;
+
+            if (!bandwidthNotified) {
+              bandwidthNotified = true;
+              config.onBandwidthExceeded?.({
+                reason: bandwidth.reason,
+                usedBytes: bandwidth.usedBytes,
+                limitBytes: bandwidth.limitBytes,
+              });
+            }
 
             break;
           }
@@ -206,7 +268,7 @@ export function startAgent(config: AgentConfig): Agent {
       tunnels.clear();
 
       if (shuttingDown) {
-        if (!authFailed) {
+        if (!authFailed && !rateLimited && !tunnelExpired) {
           config.onStopped?.();
         }
         return;

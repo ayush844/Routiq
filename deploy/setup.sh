@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+set -eu
+
+echo "Routiq VPS setup (single box: Redis + 2 relays + NGINX)"
+echo ""
+echo "1. Copy deploy/.env.production.example → apps/relay/.env and fill secrets"
+echo "2. Point DNS:"
+echo "     relay.routiq.dev  →  your VPS IP"
+echo "     *.routiq.dev      →  your VPS IP (wildcard)"
+echo "3. TLS certs:"
+echo "     ./deploy/generate-certs.sh   # local/testing only"
+echo "     # production: certbot certonly --nginx -d relay.routiq.dev -d '*.routiq.dev'"
+echo "     # then copy certs to deploy/certs/fullchain.pem and privkey.pem"
+echo "4. Start stack:"
+echo "     docker compose --profile prod up -d --build"
+echo "5. Verify:"
+echo "     curl https://relay.routiq.dev/health"
+echo "6. CLI (users):"
+echo "     npm install -g routiq"
+echo "     routiq login"
+echo "     routiq http 3000"

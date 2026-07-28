@@ -1,16 +1,27 @@
 {
-  "name": "cli",
-  "version": "1.0.0",
+  "name": "routiq",
+  "version": "0.1.0",
+  "description": "Expose localhost to the internet through Routiq tunnels",
+  "license": "MIT",
   "type": "module",
   "bin": {
-    "routiq": "./dist/index.js"
+    "routiq": "./dist/index.cjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc"
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --external:figlet --outfile=dist/index.cjs",
+    "prepublishOnly": "pnpm run build"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
-    "@routiq/agent": "workspace:*",
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",
     "cli-table3": "^0.6.5",
@@ -28,6 +39,7 @@
   "devDependencies": {
     "@types/colors": "^1.2.4",
     "@types/node": "^25.9.1",
+    "esbuild": "^0.25.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3"
   }

@@ -13,6 +13,13 @@ export interface AuthFailedMessage {
   reason: string
 }
 
+export interface RateLimitedMessage {
+  type: "RATE_LIMITED"
+  scope: "auth" | "tunnel"
+  reason: string
+  retryAfter?: number
+}
+
 export interface CreateTunnelMessage {
   type: "CREATE_TUNNEL"
   localPort: number
@@ -24,6 +31,24 @@ export interface TunnelCreatedMessage {
   tunnelId: string
   url: string
   port: number
+}
+
+export interface TunnelOfflineMessage {
+  type: "TUNNEL_OFFLINE"
+  reason: string
+}
+
+export interface TunnelExpiredMessage {
+  type: "TUNNEL_EXPIRED"
+  reason: string
+  tunnelId?: string
+}
+
+export interface BandwidthExceededMessage {
+  type: "BANDWIDTH_EXCEEDED"
+  reason: string
+  usedBytes: number
+  limitBytes: number
 }
 
 export interface HttpRequestMessage{

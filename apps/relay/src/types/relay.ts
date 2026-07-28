@@ -9,16 +9,23 @@ export type JwtPayload = {
 export type ClientState = {
     authenticated: boolean
     user?: JwtPayload
+    plan: string
     tunnelIds: string[]
     lastPongAt: number
 }
 
-export type Tunnel = {
+export type TunnelMeta = {
   tunnelId: string
   subdomain: string
   localPort: number
   protocol: "http" | "tcp"
   ownerId: string
+  plan: string
+  relayId: string
+  createdAt: number
+}
+
+export type Tunnel = TunnelMeta & {
   ws: WebSocket
 }
 
@@ -31,4 +38,7 @@ export type PendingRequest = {
   reply: FastifyReply
   timeout: NodeJS.Timeout
   createdAt: number
+  ownerId: string
+  requestBytes: number
+  responseBytes: number
 }
