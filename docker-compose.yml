@@ -1,3 +1,10 @@
+networks:
+  routiq_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
 services:
   redis:
     image: redis:7-alpine
@@ -11,6 +18,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - routiq_net
 
   relay-1:
     profiles: ["multi-relay", "prod"]
@@ -31,6 +40,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      routiq_net:
+        ipv4_address: 172.28.0.11
 
   relay-2:
     profiles: ["multi-relay", "prod"]
@@ -51,6 +63,9 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      routiq_net:
+        ipv4_address: 172.28.0.12
 
   nginx:
     profiles: ["multi-relay"]
@@ -64,6 +79,8 @@ services:
       - relay-1
       - relay-2
     restart: unless-stopped
+    networks:
+      - routiq_net
 
   nginx-prod:
     profiles: ["prod"]
@@ -78,6 +95,8 @@ services:
       - relay-1
       - relay-2
     restart: unless-stopped
+    networks:
+      - routiq_net
 
 volumes:
   redis_data:
