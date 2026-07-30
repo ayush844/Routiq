@@ -24,18 +24,32 @@ export function renderErrorPage(
     padding: 24px;
   }
   .card { max-width: 440px; }
-  .logo {
+  .brand {
     display: inline-flex;
     align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+  .brand-icon {
+    display: flex;
+    align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 14px;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
     background: #f3743a;
+    box-shadow: 0 2px 6px rgba(243, 116, 58, 0.35);
+  }
+  .brand-icon svg {
+    width: 55%;
+    height: 55%;
     color: white;
-    font-weight: 700;
-    font-size: 20px;
-    margin-bottom: 24px;
+  }
+  .brand-name {
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: -0.02em;
+    color: #e8e6e3;
   }
   h1 {
     font-size: 22px;
@@ -64,7 +78,14 @@ export function renderErrorPage(
 </head>
 <body>
   <div class="card">
-    <div class="logo">R</div>
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 12h16M12 4l8 8-8 8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <span class="brand-name">Routiq</span>
+    </div>
     <h1>${heading}</h1>
     <p>${message}</p>
     <div class="status">routiq.dev · ${status}</div>
