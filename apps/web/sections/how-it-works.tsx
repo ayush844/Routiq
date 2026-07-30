@@ -35,7 +35,7 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section className="relative bg-lifted py-24 md:py-32">
+    <section className="relative bg-lifted py-16 md:py-32">
       <div className="container mx-auto max-w-7xl px-6 lg:px-8">
         <motion.div
           initial="hidden"

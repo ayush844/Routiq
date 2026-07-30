@@ -77,15 +77,18 @@ export function CliDashboard() {
 
   return (
     <div className="relative w-full overflow-hidden rounded-[40px] border border-ink/10 bg-terminal shadow-card">
-      <div className="border-b border-signal/20 bg-gradient-to-r from-ink/80 to-transparent px-6 py-5">
-        <pre className="font-mono text-xs leading-tight text-signal-light/80 md:text-sm">
-        {`    ____                   __     _         
+      <div className="border-b border-signal/20 bg-gradient-to-r from-ink/80 to-transparent px-4 py-4 sm:px-6 sm:py-5">
+        <pre className="hidden overflow-hidden font-mono text-xs leading-tight text-signal-light/80 sm:block md:text-sm">
+        {`    ____                   __     _
    / __ \\  ____   __  __  / /_   (_)  ____ _
   / /_/ / / __ \\ / / / / / __/  / /  / __ \`/
- / _, _/ / /_/ // /_/ / / /_   / /  / /_/ / 
-/_/ |_|  \\____/ \\__,_/  \\__/  /_/   \\__, /  
+ / _, _/ / /_/ // /_/ / / /_   / /  / /_/ /
+/_/ |_|  \\____/ \\__,_/  \\__/  /_/   \\__, /
                                       /_/   `}
         </pre>
+        <p className="font-mono text-sm font-semibold text-signal-light/80 sm:hidden">
+          Routiq
+        </p>
         <p className="mt-2 font-mono text-xs text-zinc-500">
           Expose localhost to the internet
         </p>
@@ -94,7 +97,7 @@ export function CliDashboard() {
         </p>
       </div>
 
-      <div className="p-4 md:p-6">
+      <div className="p-3 sm:p-4 md:p-6">
         <div className="grid gap-4 md:grid-cols-2">
           <BoxPanel title=" Connection ">
             <div className="space-y-2">

@@ -68,7 +68,7 @@ function MiniChart() {
 
 export function DashboardPreview() {
   return (
-    <section id="dashboard" className="relative bg-lifted py-24 md:py-32">
+    <section id="dashboard" className="relative bg-lifted py-16 md:py-32">
       <div className="container mx-auto max-w-7xl px-6 lg:px-8">
         <motion.div
           initial="hidden"
@@ -113,7 +113,7 @@ export function DashboardPreview() {
                   </div>
                 </div>
 
-                <div className="flex min-h-[480px] flex-col md:min-h-[520px] md:flex-row">
+                <div className="flex max-h-[380px] min-h-0 flex-col overflow-hidden md:max-h-none md:min-h-[520px] md:flex-row">
                   <aside className="w-full border-b border-ink/10 bg-lifted p-4 md:w-56 md:border-b-0 md:border-r">
                     <div className="mb-6 flex items-center gap-2 px-2">
                       <div className="h-7 w-7 rounded-lg bg-ink" />

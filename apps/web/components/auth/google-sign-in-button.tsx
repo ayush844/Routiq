@@ -37,6 +37,7 @@ interface GoogleSignInButtonProps {
   label?: string;
   animated?: boolean;
   className?: string;
+  wrapperClassName?: string;
   variant?: ButtonProps["variant"];
   size?: ButtonProps["size"];
 }
@@ -46,6 +47,7 @@ export function GoogleSignInButton({
   label = "Continue with Google",
   animated = false,
   className,
+  wrapperClassName,
   variant = "secondary",
   size = "lg",
 }: GoogleSignInButtonProps) {
@@ -60,13 +62,13 @@ export function GoogleSignInButton({
 
   if (animated) {
     return (
-      <form action={signIn} className="inline-flex">
+      <form action={signIn} className={cn("inline-flex", wrapperClassName)}>
         <AnimatedButton
           type="submit"
           size={size}
           variant={variant}
           className={className}
-          wrapperClassName="inline-flex"
+          wrapperClassName={cn("inline-flex", wrapperClassName)}
         >
           {content}
         </AnimatedButton>
@@ -75,7 +77,7 @@ export function GoogleSignInButton({
   }
 
   return (
-    <form action={signIn} className="inline-flex">
+    <form action={signIn} className={cn("inline-flex", wrapperClassName)}>
       <Button
         type="submit"
         variant={variant}

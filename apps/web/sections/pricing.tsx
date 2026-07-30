@@ -21,7 +21,7 @@ const TWITTER = "https://x.com/ayushuprush";
 
 export function Pricing() {
   return (
-    <section id="pricing" className="relative bg-lifted py-24 md:py-32">
+    <section id="pricing" className="relative bg-lifted py-16 md:py-32">
       <div className="container mx-auto max-w-7xl px-6 lg:px-8">
         <motion.div
           initial="hidden"
@@ -36,13 +36,13 @@ export function Pricing() {
           />
 
           <div className="mx-auto max-w-lg">
-            <div className="rounded-[40px] border border-ink/10 bg-white p-8 text-center shadow-card md:p-10">
+            <div className="rounded-[40px] border border-ink/10 bg-white p-6 text-center shadow-card md:p-10">
               <p className="text-5xl font-medium tracking-[-0.02em] text-ink">
                 $0
               </p>
               <p className="mt-1 text-muted">to get started</p>
 
-              <ul className="mt-8 space-y-3 text-left">
+              <ul className="mt-6 space-y-3 text-left md:mt-8">
                 {features.map((feature) => (
                   <li
                     key={feature}
@@ -54,7 +54,7 @@ export function Pricing() {
                 ))}
               </ul>
 
-              <div className="mt-8 space-y-3">
+              <div className="mt-6 space-y-3 md:mt-8">
                 <AnimatedButton variant="signal" className="w-full" asChild>
                   <a
                     href={GITHUB_REPO}
@@ -72,7 +72,7 @@ export function Pricing() {
                 </p>
               </div>
 
-              <div className="mt-8 border-t border-ink/10 pt-6">
+              <div className="mt-6 border-t border-ink/10 pt-6 md:mt-8">
                 <p className="text-sm text-muted">Follow the journey</p>
                 <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
                   <Button variant="outline" size="sm" asChild>

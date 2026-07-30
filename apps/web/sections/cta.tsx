@@ -22,14 +22,14 @@ const ctaOutlineClass =
 
 export function Cta({ user, callbackUrl = "/dashboard" }: CtaProps) {
   return (
-    <section id="cta" className="relative py-24 md:py-32">
+    <section id="cta" className="relative py-16 md:py-32">
       <div className="container mx-auto max-w-7xl px-6 lg:px-8">
         <motion.div
           initial="hidden"
           whileInView="visible"
           viewport={viewportOnce}
           variants={fadeInUp}
-          className="relative overflow-hidden rounded-[40px] bg-ink px-8 py-16 text-center md:px-16 md:py-24"
+          className="relative overflow-hidden rounded-[40px] bg-ink px-6 py-10 text-center md:px-16 md:py-24"
         >
           <div className="absolute -left-20 -top-20 h-60 w-60 rounded-full bg-signal/10 blur-[80px]" />
           <div className="absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-signal-light/10 blur-[80px]" />

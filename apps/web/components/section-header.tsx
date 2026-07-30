@@ -24,7 +24,7 @@ export function SectionHeader({
     <motion.div
       variants={fadeInUp}
       className={cn(
-        "mb-16 max-w-2xl",
+        "mb-10 max-w-2xl md:mb-16",
         align === "center" && "mx-auto text-center",
         className
       )}

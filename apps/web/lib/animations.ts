@@ -57,6 +57,6 @@ export const slideInRight = {
 
 export const viewportOnce = {
   once: true,
-  margin: "-80px",
-  amount: 0.2 as const,
+  margin: "0px 0px -10% 0px",
+  amount: "some" as const,
 };

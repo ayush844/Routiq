@@ -15,7 +15,7 @@ export function CliShowcase() {
   const y = useTransform(scrollYProgress, [0, 1], [40, -40]);
 
   return (
-    <section id="cli" ref={ref} className="relative py-24 md:py-32">
+    <section id="cli" ref={ref} className="relative py-16 md:py-32">
       <div className="container mx-auto max-w-7xl px-6 lg:px-8">
         <motion.div
           initial="hidden"

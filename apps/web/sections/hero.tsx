@@ -25,7 +25,7 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
   };
 
   return (
-    <section className="relative min-h-screen overflow-hidden pt-32 pb-20 md:pt-40 md:pb-32">
+    <section className="relative overflow-hidden pt-28 pb-10 lg:min-h-screen lg:pt-40 lg:pb-32">
       <div className="container mx-auto max-w-7xl px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
           <motion.div
@@ -36,7 +36,7 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
             }}
           >
             <motion.div variants={fadeInUp}>
-              <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-signal/20 bg-signal/5 px-4 py-1.5 text-sm text-signal">
+              <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-signal/20 bg-signal/5 px-4 py-1.5 text-sm text-signal lg:mb-6">
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-light opacity-75" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-signal" />
@@ -56,7 +56,7 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
 
             <motion.p
               variants={fadeInUp}
-              className="mt-6 max-w-lg text-lg leading-relaxed text-muted"
+              className="mt-4 max-w-lg text-base leading-relaxed text-muted lg:mt-6 lg:text-lg"
             >
               Securely share your local development server with the world.
               One command. Zero configuration. Built for developers who ship fast.
@@ -64,10 +64,15 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
 
             <motion.div
               variants={fadeInUp}
-              className="mt-8 flex flex-wrap items-center gap-4"
+              className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 lg:mt-8"
             >
               {user ? (
-                <AnimatedButton size="lg" asChild>
+                <AnimatedButton
+                  size="lg"
+                  asChild
+                  className="w-full sm:w-auto"
+                  wrapperClassName="w-full sm:w-auto"
+                >
                   <Link href="/dashboard">
                     Go to Dashboard
                     <ArrowRight className="h-4 w-4" />
@@ -77,9 +82,17 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
                 <GoogleSignInButton
                   callbackUrl={callbackUrl}
                   animated
+                  className="w-full sm:w-auto"
+                  wrapperClassName="w-full sm:w-auto"
                 />
               )}
-              <AnimatedButton size="lg" variant="secondary" asChild>
+              <AnimatedButton
+                size="lg"
+                variant="secondary"
+                asChild
+                className="w-full sm:w-auto"
+                wrapperClassName="w-full sm:w-auto"
+              >
                 <a
                   href="https://github.com/ayush844/Routiq"
                   target="_blank"
@@ -91,7 +104,7 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
               </AnimatedButton>
             </motion.div>
 
-            <motion.div variants={fadeInUp} className="mt-10">
+            <motion.div variants={fadeInUp} className="mt-6 lg:mt-10">
               <button
                 type="button"
                 onClick={copyInstall}
@@ -114,6 +127,7 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
             initial="hidden"
             animate="visible"
             variants={slideInRight}
+            className="hidden lg:block"
           >
             <HeroTerminal />
           </motion.div>
