@@ -49,6 +49,7 @@ import {
   routeHttpRequest,
 } from "./services/relay-http.js"
 import { checkRateLimit, retryAfterSeconds } from "./services/rate-limit.js"
+import { renderErrorPage } from "./http/error-page.js"
 import { buildBandwidthExceededMessage, isOverBandwidthQuota, recordBandwidth } from "./services/bandwidth.js"
 import { GLOBAL_LIMITS, getPlanLimits } from "./config/limits.js"
 import {
@@ -649,13 +650,31 @@ app.all("/*", async (req, reply) => {
     const tunnelId = await getTunnelIdBySubdomain(subdomain!)
 
     if (!tunnelId) {
-      return reply.status(404).send("Subdomain not found")
+      return reply
+        .status(404)
+        .type("text/html")
+        .send(
+          renderErrorPage(
+            404,
+            "Subdomain not found",
+            "There's no active Routiq tunnel at this address. Double-check the URL, or if this one's yours, make sure <code>routiq http</code> is still running."
+          )
+        )
     }
 
     meta = await getTunnelMeta(tunnelId)
 
     if (!meta) {
-      return reply.status(404).send("Tunnel not found")
+      return reply
+        .status(404)
+        .type("text/html")
+        .send(
+          renderErrorPage(
+            404,
+            "Tunnel not found",
+            "This tunnel no longer exists — it may have expired or been closed."
+          )
+        )
     }
   }
 

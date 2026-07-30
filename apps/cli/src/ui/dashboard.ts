@@ -49,6 +49,13 @@ export class Dashboard {
     if (this.active) return;
     this.active = true;
     process.stdout.write(ALT_SCREEN_ON);
+
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+    process.stdin.on("data", this.handleStdin);
+
     this.requestRender();
   }
 
@@ -65,11 +72,29 @@ export class Dashboard {
       this.resizeTimer = null;
     }
 
+    process.stdin.off("data", this.handleStdin);
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false);
+    }
+    process.stdin.pause();
+
     if (this.active) {
       process.stdout.write(ALT_SCREEN_OFF);
       this.active = false;
     }
   }
+
+  private handleStdin = (data: Buffer) => {
+    // Ctrl+C (ETX) — raw mode disables the terminal's automatic
+    // signal generation, so forward it manually.
+    if (data.length === 1 && data[0] === 0x03) {
+      process.emit("SIGINT");
+      return;
+    }
+    // Swallow everything else (arrow-key sequences from mouse-wheel
+    // scroll while in the alternate screen, stray keypresses, etc.)
+    // so they don't get echoed onto the screen.
+  };
 
   private requestRender() {
     if (!this.active) return;
