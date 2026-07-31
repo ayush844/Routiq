@@ -12,16 +12,9 @@ const footerLinks = {
     { label: "Pricing", href: "#pricing" },
   ],
   Resources: [
-    { label: "Documentation", href: "#" },
-    { label: "GitHub", href: "https://github.com/ayush844" },
-    { label: "Changelog", href: "#" },
-    { label: "API Reference", href: "#" },
-  ],
-  Company: [
-    { label: "About", href: "#" },
-    { label: "Blog", href: "#" },
-    { label: "Twitter", href: "https://x.com/ayushuprush" },
-    { label: "Contact", href: "#" },
+    { label: "Documentation", href: "/docs" },
+    { label: "npm", href: "https://www.npmjs.com/package/routiq" },
+    { label: "GitHub", href: "https://github.com/ayush844/Routiq" },
   ],
 };
 
@@ -29,7 +22,7 @@ export function Footer() {
   return (
     <footer className="relative bg-ink py-12 md:py-20">
       <div className="container mx-auto max-w-7xl px-6 lg:px-8">
-        <div className="mb-12 grid gap-12 md:grid-cols-2 lg:grid-cols-5">
+        <div className="mb-12 grid gap-12 md:grid-cols-2 lg:grid-cols-4">
           <div className="lg:col-span-2">
             <Logo variant="dark" />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/50">

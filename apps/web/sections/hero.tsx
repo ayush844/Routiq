@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { Github, Copy, Check, ArrowRight } from "lucide-react";
 import { useState } from "react";
 import { HeroTerminal } from "@/components/terminal/hero-terminal";
-import { AnimatedButton } from "@/components/animated-button";
+import { Button } from "@/components/ui/button";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { fadeInUp, slideInLeft, slideInRight } from "@/lib/animations";
 
@@ -62,37 +62,44 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
               One command. Zero configuration. Built for developers who ship fast.
             </motion.p>
 
+            <motion.div variants={fadeInUp} className="mt-7 lg:mt-9">
+              <button
+                type="button"
+                onClick={copyInstall}
+                className="group flex w-full max-w-lg items-center gap-3 rounded-[24px] border-[1.5px] border-ink/15 bg-white px-6 py-4 font-mono text-base shadow-card transition-all hover:border-signal/40 hover:shadow-nav md:px-7 md:py-5 md:text-lg"
+              >
+                <span className="text-signal">$</span>
+                <span className="flex-1 text-left font-medium text-ink">
+                  npm install -g routiq
+                </span>
+                {copied ? (
+                  <Check className="h-5 w-5 shrink-0 text-emerald-600" />
+                ) : (
+                  <Copy className="h-5 w-5 shrink-0 text-muted opacity-60 transition-opacity group-hover:opacity-100" />
+                )}
+              </button>
+            </motion.div>
+
             <motion.div
               variants={fadeInUp}
-              className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4 lg:mt-8"
+              className="mt-5 flex flex-wrap items-center gap-2 lg:mt-6"
             >
               {user ? (
-                <AnimatedButton
-                  size="lg"
-                  asChild
-                  className="w-full sm:w-auto"
-                  wrapperClassName="w-full sm:w-auto"
-                >
+                <Button variant="ghost" size="sm" asChild>
                   <Link href="/dashboard">
-                    Go to Dashboard
-                    <ArrowRight className="h-4 w-4" />
+                    Go to dashboard
+                    <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
-                </AnimatedButton>
+                </Button>
               ) : (
                 <GoogleSignInButton
                   callbackUrl={callbackUrl}
-                  animated
-                  className="w-full sm:w-auto"
-                  wrapperClassName="w-full sm:w-auto"
+                  size="sm"
+                  variant="ghost"
+                  label="Sign in to manage tunnels"
                 />
               )}
-              <AnimatedButton
-                size="lg"
-                variant="secondary"
-                asChild
-                className="w-full sm:w-auto"
-                wrapperClassName="w-full sm:w-auto"
-              >
+              <Button variant="ghost" size="sm" asChild>
                 <a
                   href="https://github.com/ayush844/Routiq"
                   target="_blank"
@@ -101,25 +108,7 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
                   <Github className="h-4 w-4" />
                   GitHub
                 </a>
-              </AnimatedButton>
-            </motion.div>
-
-            <motion.div variants={fadeInUp} className="mt-6 lg:mt-10">
-              <button
-                type="button"
-                onClick={copyInstall}
-                className="group flex w-full max-w-md items-center gap-3 rounded-[20px] border border-ink/15 bg-white px-5 py-3.5 font-mono text-sm text-muted transition-all hover:border-signal/30 hover:shadow-nav"
-              >
-                <span className="text-signal">$</span>
-                <span className="flex-1 text-left text-ink">
-                  npm install -g routiq
-                </span>
-                {copied ? (
-                  <Check className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <Copy className="h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
-                )}
-              </button>
+              </Button>
             </motion.div>
           </motion.div>
 

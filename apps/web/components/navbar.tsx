@@ -4,19 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Session } from "next-auth";
 import { motion, AnimatePresence } from "framer-motion";
-import { Github, Menu, X } from "lucide-react";
+import { Github, Menu, Package, X } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { AnimatedButton } from "@/components/animated-button";
 import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const navLinks = [
-  { label: "Features", href: "#features" },
-  { label: "CLI", href: "#cli" },
-  { label: "Dashboard", href: "#dashboard" },
-  { label: "Pricing", href: "#pricing" },
-];
+const navLinks = [{ label: "Docs", href: "/docs" }];
+
+const NPM_PACKAGE = "https://www.npmjs.com/package/routiq";
 
 interface NavbarProps {
   user?: Session["user"] | null;
@@ -80,6 +77,17 @@ export function Navbar({ user, callbackUrl = "/dashboard" }: NavbarProps) {
           <div className="hidden items-center gap-3 lg:flex">
             <Button variant="ghost" size="sm" asChild>
               <a
+                href={NPM_PACKAGE}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="npm package"
+              >
+                <Package className="h-4 w-4" />
+                npm
+              </a>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <a
                 href="https://github.com/ayush844/Routiq"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -97,7 +105,7 @@ export function Navbar({ user, callbackUrl = "/dashboard" }: NavbarProps) {
               <GoogleSignInButton
                 callbackUrl={callbackUrl}
                 size="sm"
-                variant="default"
+                variant="outline"
                 label="Sign in"
                 animated
               />
@@ -144,6 +152,15 @@ export function Navbar({ user, callbackUrl = "/dashboard" }: NavbarProps) {
                 ))}
                 <hr className="border-ink/10" />
                 <a
+                  href={NPM_PACKAGE}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-charcoal hover:text-ink"
+                >
+                  <Package className="h-5 w-5" />
+                  npm
+                </a>
+                <a
                   href="https://github.com/ayush844/Routiq"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -162,7 +179,7 @@ export function Navbar({ user, callbackUrl = "/dashboard" }: NavbarProps) {
                   <GoogleSignInButton
                     callbackUrl={callbackUrl}
                     size="lg"
-                    variant="default"
+                    variant="outline"
                     className="w-full"
                   />
                 )}
