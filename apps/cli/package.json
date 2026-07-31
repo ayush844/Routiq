@@ -1,8 +1,14 @@
 {
   "name": "routiq",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Expose localhost to the internet through Routiq tunnels",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ayush844/Routiq.git",
+    "directory": "apps/cli"
+  },
+  "homepage": "https://routiq.dev",
   "type": "module",
   "bin": {
     "routiq": "./dist/index.cjs"
