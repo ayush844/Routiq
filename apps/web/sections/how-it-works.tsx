@@ -20,8 +20,8 @@ const steps = [
     step: "02",
     title: "Authenticate",
     description:
-      "Sign in with your API key or OAuth. Your credentials are encrypted and never stored in plain text.",
-    command: "routiq auth login",
+      "Opens your dashboard to grab an API key — sign in with Google, then paste the key back into the terminal.",
+    command: "routiq login",
   },
   {
     icon: Globe,
@@ -46,7 +46,7 @@ export function HowItWorks() {
           <SectionHeader
             eyebrow="How it works"
             title="Three steps to a public URL"
-            description="From install to live tunnel in under 60 seconds. No account setup required to get started."
+            description="From install to live tunnel in about a minute."
           />
 
           <div className="flex flex-col md:grid md:grid-cols-[1fr_auto_1fr_auto_1fr] md:items-stretch md:gap-y-0">
