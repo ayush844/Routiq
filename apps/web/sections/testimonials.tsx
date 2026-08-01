@@ -7,7 +7,7 @@ import { staggerContainer, fadeInUp, viewportOnce } from "@/lib/animations";
 const testimonials = [
   {
     quote:
-      "Setting up Routiq took just couple of seconds. I use it to share my local projects with teammates and clients, and the experience has been smooth from day one. It's simple, reliable, and does exactly what I need.",
+      "Setting up Routiq took just a couple of seconds. I use it to share my local projects with teammates and clients, and the experience has been smooth from day one. It's simple, reliable, and does exactly what I need.",
     name: "Monika Sharma",
     role: "Routiq User",
     initials: "MS",
