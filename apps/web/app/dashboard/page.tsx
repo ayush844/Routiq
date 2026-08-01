@@ -1,11 +1,17 @@
 import Link from "next/link";
 import Image from "next/image";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getApiKey } from "@/actions/api-key";
 import { Logo } from "@/components/logo";
 import { ApiKeySection } from "@/components/dashboard/api-key-section";
 import { SignOutButton } from "@/components/dashboard/sign-out-button";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+  robots: { index: false, follow: false },
+};
 
 export default async function DashboardPage() {
   const session = await auth();

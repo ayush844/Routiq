@@ -10,9 +10,18 @@ import { Package, Github } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
-  title: "Docs — Routiq",
+  title: "Docs",
   description:
     "How to install and use the Routiq CLI to expose localhost to the internet.",
+  alternates: {
+    canonical: "/docs",
+  },
+  openGraph: {
+    title: "Docs — Routiq",
+    description:
+      "How to install and use the Routiq CLI to expose localhost to the internet.",
+    url: "/docs",
+  },
 };
 
 const NPM_PACKAGE = "https://www.npmjs.com/package/routiq";
