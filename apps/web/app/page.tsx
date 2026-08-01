@@ -13,6 +13,7 @@ export default async function Home({ searchParams }: HomeProps) {
     <LandingPage
       user={session?.user ?? null}
       callbackUrl={callbackUrl ?? "/dashboard"}
+      fromProtectedRedirect={Boolean(callbackUrl)}
     />
   );
 }

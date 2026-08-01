@@ -18,9 +18,14 @@ import { Footer } from "@/sections/footer";
 interface LandingPageProps {
   user: Session["user"] | null;
   callbackUrl: string;
+  fromProtectedRedirect?: boolean;
 }
 
-export function LandingPage({ user, callbackUrl }: LandingPageProps) {
+export function LandingPage({
+  user,
+  callbackUrl,
+  fromProtectedRedirect,
+}: LandingPageProps) {
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -33,7 +38,11 @@ export function LandingPage({ user, callbackUrl }: LandingPageProps) {
       <Navbar user={user} callbackUrl={callbackUrl} />
 
       <main>
-        <Hero user={user} callbackUrl={callbackUrl} />
+        <Hero
+          user={user}
+          callbackUrl={callbackUrl}
+          fromProtectedRedirect={fromProtectedRedirect}
+        />
         <Features />
         <HowItWorks />
         <CliShowcase />

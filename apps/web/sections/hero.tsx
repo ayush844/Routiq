@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { Session } from "next-auth";
 import { motion } from "framer-motion";
-import { Github, Copy, Check, ArrowRight } from "lucide-react";
+import { Github, Copy, Check, ArrowRight, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { HeroTerminal } from "@/components/terminal/hero-terminal";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,14 @@ import { fadeInUp, slideInLeft, slideInRight } from "@/lib/animations";
 interface HeroProps {
   user?: Session["user"] | null;
   callbackUrl?: string;
+  fromProtectedRedirect?: boolean;
 }
 
-export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
+export function Hero({
+  user,
+  callbackUrl = "/dashboard",
+  fromProtectedRedirect,
+}: HeroProps) {
   const [copied, setCopied] = useState(false);
 
   const copyInstall = async () => {
@@ -35,6 +40,31 @@ export function Hero({ user, callbackUrl = "/dashboard" }: HeroProps) {
               visible: { transition: { staggerChildren: 0.12 } },
             }}
           >
+            {fromProtectedRedirect && !user && (
+              <motion.div
+                variants={fadeInUp}
+                className="mb-6 flex flex-col gap-3 rounded-[20px] border border-signal/20 bg-signal/5 p-4 sm:flex-row sm:items-center sm:justify-between lg:mb-8"
+              >
+                <div className="flex items-center gap-3">
+                  <KeyRound className="h-5 w-5 shrink-0 text-signal" />
+                  <p className="text-sm text-charcoal">
+                    <span className="font-medium">
+                      Signing in from the CLI?
+                    </span>{" "}
+                    Log in to grab your API key — we&apos;ll take you
+                    straight to your dashboard.
+                  </p>
+                </div>
+                <GoogleSignInButton
+                  callbackUrl={callbackUrl}
+                  animated
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  wrapperClassName="w-full sm:w-auto"
+                />
+              </motion.div>
+            )}
+
             <motion.div variants={fadeInUp}>
               <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-signal/20 bg-signal/5 px-4 py-1.5 text-sm text-signal lg:mb-6">
                 <span className="relative flex h-2 w-2">
