@@ -7,26 +7,26 @@ import { staggerContainer, fadeInUp, viewportOnce } from "@/lib/animations";
 const testimonials = [
   {
     quote:
-      "Routiq replaced ngrok for our entire team. The CLI dashboard alone is worth it — I can see every request without switching tabs.",
-    name: "Sarah Chen",
-    role: "Staff Engineer at Vercel",
-    initials: "SC",
+      "Setting up Routiq took just a couple of minutes. I use it to share my local projects with teammates and clients, and the experience has been smooth from day one. It's simple, reliable, and does exactly what I need.",
+    name: "Monika Sharma",
+    role: "Routiq User",
+    initials: "MS",
     gradient: "from-signal to-clay",
   },
   {
     quote:
-      "We use Routiq to demo features to clients in real-time. Setup takes 30 seconds and the tunnels are blazing fast.",
-    name: "Marcus Rivera",
-    role: "Founder at Stackline",
-    initials: "MR",
+      "The ability to expose multiple local services at the same time is what made me switch. Managing different tunnels is much easier now, and the CLI is clean and straightforward to use.",
+    name: "Vaibhav Jha",
+    role: "Routiq User",
+    initials: "VJ",
     gradient: "from-signal-light to-signal",
   },
   {
     quote:
-      "Finally a tunneling tool that feels like it was built by developers, for developers. Open source and self-hostable too.",
-    name: "Priya Patel",
-    role: "DevOps Lead at Railway",
-    initials: "PP",
+      "I was looking for a lightweight alternative for exposing my local development server, and Routiq has been great so far. The setup is quick, performance is solid, and I haven't had to think about it after getting started.",
+    name: "Avinash Pandey",
+    role: "Routiq User",
+    initials: "AP",
     gradient: "from-clay to-signal",
   },
 ];
@@ -43,8 +43,8 @@ export function Testimonials() {
         >
           <SectionHeader
             eyebrow="Testimonials"
-            title="Loved by developers everywhere"
-            description="Join thousands of developers who trust Routiq to expose their localhost."
+            title="What early users are saying"
+            description="Real feedback from developers already using Routiq."
           />
 
           <div className="grid gap-6 md:grid-cols-3">
