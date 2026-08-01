@@ -51,8 +51,7 @@ export function Hero({
                     <span className="font-medium">
                       Signing in from the CLI?
                     </span>{" "}
-                    Log in to grab your API key — we&apos;ll take you
-                    straight to your dashboard.
+                    Log in to grab your API key
                   </p>
                 </div>
                 <GoogleSignInButton
