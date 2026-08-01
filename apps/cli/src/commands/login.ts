@@ -82,6 +82,13 @@ export async function loginCommand() {
       `  Run ${chalk.cyan("routiq http <port>")} to start a tunnel.`
     );
     console.log();
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      console.log();
+      console.log(chalk.dim("  Login cancelled."));
+      process.exit(0);
+    }
+    throw error;
   } finally {
     rl.close();
   }
