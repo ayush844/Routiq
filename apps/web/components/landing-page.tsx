@@ -9,7 +9,6 @@ import { Hero } from "@/sections/hero";
 import { Features } from "@/sections/features";
 import { HowItWorks } from "@/sections/how-it-works";
 import { CliShowcase } from "@/sections/cli-showcase";
-import { DashboardPreview } from "@/sections/dashboard-preview";
 import { Pricing } from "@/sections/pricing";
 import { Testimonials } from "@/sections/testimonials";
 import { Cta } from "@/sections/cta";
@@ -46,7 +45,6 @@ export function LandingPage({
         <Features />
         <HowItWorks />
         <CliShowcase />
-        <DashboardPreview />
         <Pricing />
         <Testimonials />
         <Cta user={user} callbackUrl={callbackUrl} />
