@@ -1,6 +1,5 @@
 import WebSocket from "ws"
 import {AuthMessage, AuthSuccessMessage, BandwidthExceededMessage, CreateTunnelMessage, HttpRequestMessage, HttpResponseMessage, PongMessage, RateLimitedMessage, TunnelCreatedMessage, TunnelExpiredMessage, TunnelOfflineMessage} from "@routiq/shared"
-import { tunnels } from "./stores/tunnels.js"
 import { handleHttpRequest } from "./services/local-request.service.js"
 import {pong} from "./handlers/ping.handler.js"
 import { createAuthMessage } from "./handlers/auth.handler.js"
@@ -35,7 +34,8 @@ export interface AgentConfig {
 
     onAuthFailed?(): void;
 
-    onRateLimited?(info: { scope: "auth" | "tunnel"; reason: string; retryAfter?: number }): void;
+    // fatal = the agent is stopping; otherwise it keeps running.
+    onRateLimited?(info: { scope: "auth" | "tunnel"; reason: string; retryAfter?: number; fatal: boolean }): void;
 
     onStopped?(): void;
 
@@ -59,9 +59,14 @@ export function startAgent(config: AgentConfig): Agent {
   let rateLimited = false;
   let tunnelExpired = false;
   let bandwidthNotified = false;
+  let hasAuthenticated = false;
+  let retryAfterMs: number | null = null;
   let reconnectTimer: NodeJS.Timeout | null = null;
   let ws: WebSocket | null = null;
   let connectionId = 0;
+
+  // tunnelId -> local port, per agent instance.
+  const tunnels = new Map<string, number>();
 
   if (!config.token) {
     throw new Error(
@@ -124,6 +129,7 @@ export function startAgent(config: AgentConfig): Agent {
             const authSuccess = message as AuthSuccessMessage
 
             bandwidthNotified = false;
+            hasAuthenticated = true;
             config.onAuthenticated?.(authSuccess.userId);
 
             for (const port of config.ports) {
@@ -142,13 +148,25 @@ export function startAgent(config: AgentConfig): Agent {
 
           case "RATE_LIMITED": {
             const rl = message as RateLimitedMessage
+            const info = { scope: rl.scope, reason: rl.reason, retryAfter: rl.retryAfter }
+
+            // Tunnel limit: only that port is refused, keep the others.
+            if (rl.scope === "tunnel") {
+              config.onRateLimited?.({ ...info, fatal: false });
+              break;
+            }
+
+            // Auth limit while reconnecting: wait and retry instead of quitting.
+            if (hasAuthenticated) {
+              retryAfterMs = (rl.retryAfter ?? 30) * 1000;
+              config.onRateLimited?.({ ...info, fatal: false });
+              socket.close();
+              break;
+            }
+
             rateLimited = true;
             shuttingDown = true;
-            config.onRateLimited?.({
-              scope: rl.scope,
-              reason: rl.reason,
-              retryAfter: rl.retryAfter,
-            });
+            config.onRateLimited?.({ ...info, fatal: true });
             socket.close();
             break;
           }
@@ -229,23 +247,33 @@ export function startAgent(config: AgentConfig): Agent {
               });
 
             } catch (error) {
-
+              // Usually the local server is not running.
+              const port = tunnels.get(message.tunnelId)
               const errResponse: HttpResponseMessage = {
                 type: "HTTP_RESPONSE",
                 requestId: message.requestId,
                 status: 502,
-                headers: {},
-                body: "Internal Server Error"
+                headers: { "content-type": "text/plain; charset=utf-8" },
+                body: `Routiq could not reach localhost:${port ?? "?"} — is your local server running?`
               }
 
-              socket.send(JSON.stringify(errResponse))
+              if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify(errResponse))
+              }
+
+              config.onRequest?.({
+                method: message.method,
+                path: message.path,
+                status: 502,
+                duration: 0
+              });
             }
 
             break;
           }
 
           case "PING": {
-            socket.send(JSON.stringify(pong));
+            if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(pong));
             break;
           }
 
@@ -275,12 +303,17 @@ export function startAgent(config: AgentConfig): Agent {
       }
 
       config.onDisconnected?.();
-      config.onReconnect?.(reconnectDelay);
+
+      // ±20% jitter so agents don't all reconnect at once.
+      const delay =
+        retryAfterMs ?? Math.round(reconnectDelay * (0.8 + Math.random() * 0.4));
+      retryAfterMs = null;
+      config.onReconnect?.(delay);
 
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         connect();
-      }, reconnectDelay);
+      }, delay);
 
       reconnectDelay = Math.min(reconnectDelay * 2, 30000);
     })

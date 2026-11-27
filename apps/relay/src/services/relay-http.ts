@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto"
+import { WebSocket } from "ws"
 import {
+  HttpRequestMessage,
   RelayHttpErrorMessage,
   RelayHttpRequestMessage,
   RelayHttpResponseChunkMessage,
@@ -9,7 +11,17 @@ import {
   RelayPubSubMessage,
 } from "@routiq/shared"
 import { getRelayId } from "../config/env.js"
-import { estimateRequestBytes, forwardRequest } from "../http/forward-request.js"
+import { REQUEST_TIMEOUT_MS } from "../config/limits.js"
+import { forwardRequest } from "../http/forward-request.js"
+import {
+  encodeRequestBody,
+  estimateRequestBytes,
+  failReply,
+  requestPath,
+  ResponseHeaders,
+  sendFullReply,
+  startStreamedReply,
+} from "../http/proxy-helpers.js"
 import { recordBandwidth } from "./bandwidth.js"
 import {
   crossRelayInbound,
@@ -25,8 +37,6 @@ import {
   requestsChannel,
   responsesChannel,
 } from "./redis-pubsub.js"
-
-const CROSS_RELAY_TIMEOUT_MS = 30_000
 
 function publishToOrigin(originRelayId: string, message: RelayPubSubMessage): void {
   publish(responsesChannel(originRelayId), JSON.stringify(message))
@@ -48,30 +58,24 @@ function publishRelayError(
   publishToOrigin(originRelayId, message)
 }
 
+// --- Relay that received the visitor's request ---
+
+function inboundTimeout(requestId: string): NodeJS.Timeout {
+  return setTimeout(() => {
+    const pending = crossRelayInbound.get(requestId)
+    if (!pending) return
+
+    crossRelayInbound.delete(requestId)
+    failReply(pending.reply, 504, "Cross-relay timeout")
+  }, REQUEST_TIMEOUT_MS)
+}
+
 function resetInboundTimeout(requestId: string): void {
   const inbound = crossRelayInbound.get(requestId)
   if (!inbound) return
 
   clearTimeout(inbound.timeout)
-
-  inbound.timeout = setTimeout(() => {
-    const pending = crossRelayInbound.get(requestId)
-    if (!pending) return
-
-    if (!pending.reply.sent) {
-      pending.reply.status(504).send("Cross-relay timeout")
-    }
-
-    crossRelayInbound.delete(requestId)
-  }, CROSS_RELAY_TIMEOUT_MS)
-}
-
-function requestPath(req: any): string {
-  if (req.params?.tunnelId) {
-    return req.url.replace(`/test/${req.params.tunnelId}`, "") || "/"
-  }
-
-  return req.url
+  inbound.timeout = inboundTimeout(requestId)
 }
 
 export async function routeHttpRequest(
@@ -103,26 +107,24 @@ export async function forwardCrossRelay(
   reply: any
 ): Promise<any> {
   const requestId = randomUUID()
-  const body = req.body ? JSON.stringify(req.body) : undefined
-  const requestBytes = estimateRequestBytes(req, body)
-
-  const timeout = setTimeout(() => {
-    const pending = crossRelayInbound.get(requestId)
-    if (!pending) return
-
-    if (!pending.reply.sent) {
-      pending.reply.status(504).send("Cross-relay timeout")
-    }
-
-    crossRelayInbound.delete(requestId)
-  }, CROSS_RELAY_TIMEOUT_MS)
+  const encoded = encodeRequestBody(req.body)
 
   crossRelayInbound.set(requestId, {
     reply,
-    timeout,
+    timeout: inboundTimeout(requestId),
     ownerId: meta.ownerId,
-    requestBytes,
+    requestBytes: estimateRequestBytes(req.headers, encoded.bytes),
     responseBytes: 0,
+  })
+
+  reply.raw.on("close", () => {
+    if (reply.raw.writableFinished) return
+
+    const pending = crossRelayInbound.get(requestId)
+    if (!pending) return
+
+    clearTimeout(pending.timeout)
+    crossRelayInbound.delete(requestId)
   })
 
   const message: RelayHttpRequestMessage = {
@@ -133,48 +135,14 @@ export async function forwardCrossRelay(
     method: req.method,
     path: requestPath(req),
     headers: req.headers,
-    body,
+    body: encoded.body,
+    bodyBase64: encoded.bodyBase64,
     ownerId: meta.ownerId,
   }
 
   publish(requestsChannel(meta.relayId), JSON.stringify(message))
 
   return reply
-}
-
-export async function handleIncomingRelayRequest(
-  message: RelayHttpRequestMessage
-): Promise<void> {
-  const tunnel = await resolveTunnel(message.tunnelId)
-
-  if (!tunnel) {
-    publishRelayError(
-      message.originRelayId,
-      message.requestId,
-      503,
-      "Tunnel offline — run routiq http to reconnect"
-    )
-    return
-  }
-
-  crossRelayOutbound.set(message.requestId, {
-    originRelayId: message.originRelayId,
-    ownerId: message.ownerId,
-    requestBytes: estimateRequestBytes({ headers: message.headers }, message.body),
-    responseBytes: 0,
-  })
-
-  tunnel.ws.send(
-    JSON.stringify({
-      type: "HTTP_REQUEST",
-      requestId: message.requestId,
-      tunnelId: message.tunnelId,
-      method: message.method,
-      path: message.path,
-      headers: message.headers,
-      body: message.body,
-    })
-  )
 }
 
 export async function handleIncomingRelayResponse(payload: string): Promise<void> {
@@ -194,27 +162,21 @@ export async function handleIncomingRelayResponse(payload: string): Promise<void
       if (!inbound) return
 
       clearTimeout(inbound.timeout)
+      crossRelayInbound.delete(message.requestId)
 
-      const responseBytes =
-        message.type === "RELAY_HTTP_RESPONSE" && message.body
-          ? Buffer.byteLength(message.body, "utf8")
-          : message.type === "RELAY_HTTP_ERROR"
-            ? Buffer.byteLength(message.body, "utf8")
-            : 0
+      const responseBytes = message.body
+        ? Buffer.byteLength(message.body, "utf8")
+        : 0
 
       await recordBandwidth(
         inbound.ownerId,
         inbound.requestBytes + responseBytes
       )
 
-      inbound.reply.status(message.status)
+      const headers =
+        message.type === "RELAY_HTTP_RESPONSE" ? message.headers : undefined
 
-      if (message.type === "RELAY_HTTP_RESPONSE" && message.headers) {
-        inbound.reply.headers(message.headers)
-      }
-
-      inbound.reply.send(message.body)
-      crossRelayInbound.delete(message.requestId)
+      sendFullReply(inbound.reply, message.status, headers, message.body)
       break
     }
 
@@ -223,7 +185,8 @@ export async function handleIncomingRelayResponse(payload: string): Promise<void
       const inbound = crossRelayInbound.get(start.requestId)
       if (!inbound) return
 
-      inbound.reply.status(start.status).headers(start.headers)
+      resetInboundTimeout(start.requestId)
+      startStreamedReply(inbound.reply, start.status, start.headers)
       break
     }
 
@@ -246,6 +209,7 @@ export async function handleIncomingRelayResponse(payload: string): Promise<void
       if (!inbound) return
 
       clearTimeout(inbound.timeout)
+      crossRelayInbound.delete(end.requestId)
 
       await recordBandwidth(
         inbound.ownerId,
@@ -253,7 +217,6 @@ export async function handleIncomingRelayResponse(payload: string): Promise<void
       )
 
       inbound.reply.raw.end()
-      crossRelayInbound.delete(end.requestId)
       break
     }
 
@@ -262,14 +225,89 @@ export async function handleIncomingRelayResponse(payload: string): Promise<void
   }
 }
 
+// --- Relay that holds the agent's socket ---
+
+function outboundTimeout(requestId: string): NodeJS.Timeout {
+  return setTimeout(() => {
+    // Agent never finished: drop the entry so it can't leak.
+    crossRelayOutbound.delete(requestId)
+  }, REQUEST_TIMEOUT_MS)
+}
+
+export async function handleIncomingRelayRequest(
+  message: RelayHttpRequestMessage
+): Promise<void> {
+  const tunnel = await resolveTunnel(message.tunnelId)
+
+  if (!tunnel || tunnel.ws.readyState !== WebSocket.OPEN) {
+    publishRelayError(
+      message.originRelayId,
+      message.requestId,
+      503,
+      "Tunnel offline — run routiq http to reconnect"
+    )
+    return
+  }
+
+  const bodyBytes = message.bodyBase64
+    ? Buffer.from(message.bodyBase64, "base64").length
+    : message.body
+      ? Buffer.byteLength(message.body, "utf8")
+      : 0
+
+  crossRelayOutbound.set(message.requestId, {
+    originRelayId: message.originRelayId,
+    ws: tunnel.ws,
+    timeout: outboundTimeout(message.requestId),
+    ownerId: message.ownerId,
+    requestBytes: estimateRequestBytes(message.headers, bodyBytes),
+    responseBytes: 0,
+  })
+
+  const request: HttpRequestMessage = {
+    type: "HTTP_REQUEST",
+    requestId: message.requestId,
+    tunnelId: message.tunnelId,
+    method: message.method,
+    path: message.path,
+    headers: message.headers,
+    body: message.body,
+    bodyBase64: message.bodyBase64,
+  }
+
+  tunnel.ws.send(JSON.stringify(request))
+}
+
+// Entry only if `from` is the socket the request was sent to.
+function ownedOutbound(requestId: string, from: WebSocket) {
+  const outbound = crossRelayOutbound.get(requestId)
+  if (!outbound || outbound.ws !== from) return null
+  return outbound
+}
+
+// Fail all cross-relay requests served by this agent.
+export function failOutboundRequestsFor(ws: WebSocket, reason: string): void {
+  for (const [requestId, outbound] of crossRelayOutbound) {
+    if (outbound.ws !== ws) continue
+
+    clearTimeout(outbound.timeout)
+    crossRelayOutbound.delete(requestId)
+    publishRelayError(outbound.originRelayId, requestId, 502, reason)
+  }
+}
+
 export function relayForwardResponse(
+  from: WebSocket,
   requestId: string,
   status: number,
-  headers: Record<string, string>,
+  headers: ResponseHeaders,
   body?: string
 ): boolean {
-  const outbound = crossRelayOutbound.get(requestId)
+  const outbound = ownedOutbound(requestId, from)
   if (!outbound) return false
+
+  clearTimeout(outbound.timeout)
+  crossRelayOutbound.delete(requestId)
 
   const message: RelayHttpResponseMessage = {
     type: "RELAY_HTTP_RESPONSE",
@@ -280,17 +318,20 @@ export function relayForwardResponse(
   }
 
   publishToOrigin(outbound.originRelayId, message)
-  crossRelayOutbound.delete(requestId)
   return true
 }
 
 export function relayForwardResponseStart(
+  from: WebSocket,
   requestId: string,
   status: number,
-  headers: Record<string, string>
+  headers: ResponseHeaders
 ): boolean {
-  const outbound = crossRelayOutbound.get(requestId)
+  const outbound = ownedOutbound(requestId, from)
   if (!outbound) return false
+
+  clearTimeout(outbound.timeout)
+  outbound.timeout = outboundTimeout(requestId)
 
   const message: RelayHttpResponseStartMessage = {
     type: "RELAY_HTTP_RESPONSE_START",
@@ -304,14 +345,19 @@ export function relayForwardResponseStart(
 }
 
 export function relayForwardResponseChunk(
+  from: WebSocket,
   requestId: string,
   chunk: string
 ): boolean {
-  const outbound = crossRelayOutbound.get(requestId)
+  const outbound = ownedOutbound(requestId, from)
   if (!outbound) return false
 
-  const chunkBuffer = Buffer.from(chunk, "base64")
-  outbound.responseBytes += chunkBuffer.length
+  clearTimeout(outbound.timeout)
+  outbound.timeout = outboundTimeout(requestId)
+
+  // Byte size of the base64 chunk.
+  const padding = chunk.endsWith("==") ? 2 : chunk.endsWith("=") ? 1 : 0
+  outbound.responseBytes += Math.floor((chunk.length * 3) / 4) - padding
 
   const message: RelayHttpResponseChunkMessage = {
     type: "RELAY_HTTP_RESPONSE_CHUNK",
@@ -323,9 +369,15 @@ export function relayForwardResponseChunk(
   return true
 }
 
-export function relayForwardResponseEnd(requestId: string): boolean {
-  const outbound = crossRelayOutbound.get(requestId)
+export function relayForwardResponseEnd(
+  from: WebSocket,
+  requestId: string
+): boolean {
+  const outbound = ownedOutbound(requestId, from)
   if (!outbound) return false
+
+  clearTimeout(outbound.timeout)
+  crossRelayOutbound.delete(requestId)
 
   const message: RelayHttpResponseEndMessage = {
     type: "RELAY_HTTP_RESPONSE_END",
@@ -333,6 +385,5 @@ export function relayForwardResponseEnd(requestId: string): boolean {
   }
 
   publishToOrigin(outbound.originRelayId, message)
-  crossRelayOutbound.delete(requestId)
   return true
 }

@@ -1,9 +1,40 @@
+import { randomBytes } from "node:crypto";
 import { WebSocket } from "ws";
 import { getRelayId } from "../config/env.js";
 import { getRedis } from "../services/redis.js";
 import { Tunnel, TunnelMeta } from "../types/relay.js";
 
 const TUNNEL_TTL_SECONDS = 60 * 60 * 24;
+
+// A tunnel counts as active if its socket was seen this recently.
+const ACTIVE_WINDOW_MS = 3 * 60 * 1000;
+
+// Count the user's active tunnels and create the new one in one atomic step,
+// so parallel CREATE_TUNNELs can't go over the plan limit.
+// Returns 1 = created, 0 = limit reached, -1 = subdomain taken.
+const CREATE_TUNNEL_SCRIPT = `
+local ids = redis.call('SMEMBERS', KEYS[1])
+local limit = tonumber(ARGV[1])
+local now = tonumber(ARGV[2])
+local window = tonumber(ARGV[3])
+local active = 0
+for _, id in ipairs(ids) do
+  local raw = redis.call('GET', 'tunnel:' .. id)
+  if not raw then
+    redis.call('SREM', KEYS[1], id)
+  else
+    local m = cjson.decode(raw)
+    if m.connected == true and m.lastSeenAt and now - m.lastSeenAt < window then
+      active = active + 1
+    end
+  end
+end
+if active >= limit then return 0 end
+if not redis.call('SET', 'subdomain:' .. ARGV[5], ARGV[4], 'EX', ARGV[7], 'NX') then return -1 end
+redis.call('SET', 'tunnel:' .. ARGV[4], ARGV[6], 'EX', ARGV[7])
+redis.call('SADD', KEYS[1], ARGV[4])
+return 1
+`;
 
 const localSockets = new Map<string, WebSocket>();
 
@@ -19,34 +50,46 @@ function userTunnelsKey(userId: string) {
   return `user:${userId}:tunnels`;
 }
 
-export async function registerTunnel(
-  meta: Omit<TunnelMeta, "relayId" | "createdAt">,
-  ws: WebSocket
-): Promise<TunnelMeta> {
+// Create a tunnel if the user is under `limit`. Returns null if over the limit.
+export async function createTunnel(
+  meta: Omit<TunnelMeta, "relayId" | "createdAt" | "subdomain" | "connected" | "lastSeenAt">,
+  ws: WebSocket,
+  limit: number
+): Promise<TunnelMeta | null> {
   const redis = getRedis();
 
-  const record: TunnelMeta = {
-    ...meta,
-    relayId: getRelayId(),
-    createdAt: Date.now(),
-  };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const now = Date.now();
+    const record: TunnelMeta = {
+      ...meta,
+      subdomain: randomBytes(5).toString("hex"),
+      relayId: getRelayId(),
+      createdAt: now,
+      connected: true,
+      lastSeenAt: now,
+    };
 
-  const pipeline = redis.pipeline();
+    const result = await redis.eval(
+      CREATE_TUNNEL_SCRIPT,
+      1,
+      userTunnelsKey(record.ownerId),
+      limit,
+      now,
+      ACTIVE_WINDOW_MS,
+      record.tunnelId,
+      record.subdomain,
+      JSON.stringify(record),
+      TUNNEL_TTL_SECONDS
+    );
 
-  pipeline.set(
-    tunnelKey(record.tunnelId),
-    JSON.stringify(record),
-    "EX",
-    TUNNEL_TTL_SECONDS
-  );
-  pipeline.set(subdomainKey(record.subdomain), record.tunnelId, "EX", TUNNEL_TTL_SECONDS);
-  pipeline.sadd(userTunnelsKey(record.ownerId), record.tunnelId);
+    if (result === 0) return null;
+    if (result === 1) {
+      localSockets.set(record.tunnelId, ws);
+      return record;
+    }
+  }
 
-  await pipeline.exec();
-
-  localSockets.set(record.tunnelId, ws);
-
-  return record;
+  throw new Error("Could not allocate a unique subdomain");
 }
 
 export async function removeTunnel(tunnelId: string): Promise<void> {
@@ -66,10 +109,20 @@ export async function removeTunnel(tunnelId: string): Promise<void> {
   await pipeline.exec();
 }
 
-export async function refreshTunnelsTTL(tunnelIds: string[]): Promise<void> {
+// Heartbeat: mark this socket's tunnels as alive and extend their TTL.
+export async function refreshTunnelsTTL(
+  tunnelIds: string[],
+  ws: WebSocket
+): Promise<void> {
   for (const tunnelId of tunnelIds) {
+    if (localSockets.get(tunnelId) !== ws) continue;
+
     const meta = await getTunnelMeta(tunnelId);
-    if (meta) await refreshTunnelTTL(meta);
+    if (!meta || meta.relayId !== getRelayId()) continue;
+
+    meta.connected = true;
+    meta.lastSeenAt = Date.now();
+    await refreshTunnelTTL(meta);
   }
 }
 
@@ -93,13 +146,21 @@ async function refreshTunnelTTL(meta: TunnelMeta): Promise<void> {
   await pipeline.exec();
 }
 
-/** Remove local WebSocket only — keep Redis metadata alive for reconnect. */
-export async function detachTunnel(tunnelId: string): Promise<void> {
+// Remove the local socket, keep Redis data for reconnect.
+// Skip if the tunnel already moved to a newer socket.
+export async function detachTunnel(
+  tunnelId: string,
+  ws?: WebSocket
+): Promise<void> {
+  if (ws && localSockets.get(tunnelId) !== ws) return;
+
   localSockets.delete(tunnelId);
 
   const meta = await getTunnelMeta(tunnelId);
   if (!meta) return;
 
+  // Only mark offline if no other relay took the tunnel over.
+  if (meta.relayId === getRelayId()) meta.connected = false;
   await refreshTunnelTTL(meta);
 }
 
@@ -117,6 +178,8 @@ export async function reattachTunnel(
   }
 
   meta.relayId = getRelayId();
+  meta.connected = true;
+  meta.lastSeenAt = Date.now();
   localSockets.set(tunnelId, ws);
   await refreshTunnelTTL(meta);
 
@@ -211,8 +274,4 @@ export function isTunnelOnThisRelay(meta: TunnelMeta): boolean {
 
 export async function listUserTunnelIds(userId: string): Promise<string[]> {
   return getRedis().smembers(userTunnelsKey(userId));
-}
-
-export async function countUserTunnels(userId: string): Promise<number> {
-  return getRedis().scard(userTunnelsKey(userId));
 }

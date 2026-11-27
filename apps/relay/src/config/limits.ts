@@ -18,6 +18,18 @@ export const GLOBAL_LIMITS = {
   verifyPerMin: 30,
 };
 
+// Max visitor request body.
+export const MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024;
+
+// Max WebSocket message from an agent.
+export const MAX_WS_MESSAGE_BYTES = 16 * 1024 * 1024;
+
+// Max silence from the agent before a 504.
+export const REQUEST_TIMEOUT_MS = 30_000;
+
+// Close sockets that don't authenticate in time.
+export const AUTH_TIMEOUT_MS = 10_000;
+
 export function resolvePlan(plan: string | null | undefined): PlanTier {
   return plan === "pro" ? "pro" : "free";
 }

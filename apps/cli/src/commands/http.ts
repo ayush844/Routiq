@@ -1,6 +1,6 @@
 import { startAgent } from "@routiq/agent";
 import { getRelayHttpUrl, getToken, getRelayUrl } from "../config/env.js";
-import { validatePorts } from "../utils/validate-port.js";
+import { isValidPort } from "../utils/validate-port.js";
 import { verifyApiKey } from "../utils/verify-api-key.js";
 import { Dashboard } from "../ui/dashboard.js";
 import { clearTerminal } from "../utils/terminal.js";
@@ -8,9 +8,16 @@ import chalk from "chalk";
 
 export async function httpCommand(ports: string[]) {
 
-    const parsedPorts = ports.map(Number);
+    const badPort = ports.find((port) => !isValidPort(Number(port)));
+    if (badPort !== undefined) {
+        console.log();
+        console.log(chalk.red(`  Invalid port "${badPort}". Use a number from 1 to 65535.`));
+        console.log();
+        process.exit(1);
+    }
 
-    validatePorts(parsedPorts);
+    // Ignore repeated ports, e.g. `routiq http 3000 3000`.
+    const parsedPorts = [...new Set(ports.map(Number))];
 
     const token = getToken();
 
@@ -132,6 +139,16 @@ export async function httpCommand(ports: string[]) {
         },
 
         onRateLimited(info) {
+            if (!info.fatal) {
+                // Tunnel limit or reconnect throttling: keep running.
+                if (info.scope === "tunnel") {
+                    dashboard.addRequest({ method: "LIMIT", path: info.reason, status: 429, duration: 0 });
+                } else {
+                    dashboard.setStatus(`Rate limited — retrying in ${info.retryAfter ?? 30}s`);
+                }
+                return;
+            }
+
             dashboard.dispose();
             clearTerminal();
             console.log();

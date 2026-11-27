@@ -1,4 +1,5 @@
 import { FastifyReply } from "fastify"
+import { WebSocket } from "ws"
 
 export type CrossRelayInbound = {
   reply: FastifyReply
@@ -10,6 +11,10 @@ export type CrossRelayInbound = {
 
 export type CrossRelayOutbound = {
   originRelayId: string
+  // Agent socket serving the request.
+  ws: WebSocket
+  // Removes the entry if the agent never finishes.
+  timeout: NodeJS.Timeout
   ownerId: string
   requestBytes: number
   responseBytes: number

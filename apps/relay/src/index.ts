@@ -6,7 +6,6 @@ import {
   AuthSuccessMessage,
   BandwidthExceededMessage,
   CreateTunnelMessage,
-  HttpRequestMessage,
   HttpResponseChunkMessage,
   HttpResponseEndMessage,
   HttpResponseMessage,
@@ -20,18 +19,19 @@ import {
 import Fastify from "fastify"
 import { ClientState, Tunnel, TunnelParams } from "./types/relay.js"
 import {
-  countUserTunnels,
+  createTunnel,
   detachTunnel,
   findTunnelByUserAndPort,
   getTunnelIdBySubdomain,
   getTunnelMeta,
   reattachTunnel,
   refreshTunnelsTTL,
-  registerTunnel,
   resolveTunnel,
   resolveTunnelBySubdomain,
 } from "./stores/tunnel-store.js"
 import { pendingRequests } from "./stores/requests.js"
+import { armPendingTimeout, failPendingRequestsFor } from "./http/forward-request.js"
+import { sendFullReply, startStreamedReply } from "./http/proxy-helpers.js"
 import { validateToken, validateApiKey } from "./services/auth.service.js"
 import { connectRedis, disconnectRedis } from "./services/redis.js"
 import {
@@ -40,6 +40,7 @@ import {
   requestsChannel,
 } from "./services/redis-pubsub.js"
 import {
+  failOutboundRequestsFor,
   handleIncomingRelayRequest,
   handleIncomingRelayResponse,
   relayForwardResponse,
@@ -51,7 +52,13 @@ import {
 import { checkRateLimit, retryAfterSeconds } from "./services/rate-limit.js"
 import { renderErrorPage } from "./http/error-page.js"
 import { buildBandwidthExceededMessage, isOverBandwidthQuota, recordBandwidth } from "./services/bandwidth.js"
-import { GLOBAL_LIMITS, getPlanLimits } from "./config/limits.js"
+import {
+  AUTH_TIMEOUT_MS,
+  GLOBAL_LIMITS,
+  MAX_REQUEST_BODY_BYTES,
+  MAX_WS_MESSAGE_BYTES,
+  getPlanLimits,
+} from "./config/limits.js"
 import {
   buildTunnelUrl,
   getRelayId,
@@ -89,6 +96,8 @@ console.log(`Relay ID: ${getRelayId()}`)
 const wss = new WebSocketServer({
   port: WS_PORT,
   host: "0.0.0.0",
+  // Default is 100 MB.
+  maxPayload: MAX_WS_MESSAGE_BYTES,
 })
 
 
@@ -96,15 +105,32 @@ const ping:PingMessage = {
   type: "PING"
 }
 
-const app = Fastify({ trustProxy: true })
+// Trust only NGINX, so a fake X-Forwarded-For can't change req.ip.
+const app = Fastify({ trustProxy: 1, bodyLimit: MAX_REQUEST_BODY_BYTES })
+
+// Accept any body as raw bytes so it is forwarded unchanged.
+app.removeAllContentTypeParsers()
+app.addContentTypeParser(
+  "*",
+  { parseAs: "buffer" },
+  (_req, body, done) => done(null, body)
+)
+
+// NGINX sets X-Real-IP, so the client can't spoof it.
+function getClientIp(req: { headers: Record<string, unknown>; socket: { remoteAddress?: string } }): string {
+  const realIp = req.headers["x-real-ip"]
+  if (typeof realIp === "string" && realIp) return realIp
+  return req.socket.remoteAddress || "unknown"
+}
+
+function isValidPort(port: unknown): port is number {
+  return Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65535
+}
 
 wss.on("connection", (ws, req) => {
   console.log("Client connected");
 
-  const clientIp =
-    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
-    req.socket.remoteAddress ||
-    "unknown"
+  const clientIp = getClientIp(req)
 
   const client: ClientState = {
     authenticated: false,
@@ -113,11 +139,14 @@ wss.on("connection", (ws, req) => {
     lastPongAt: Date.now()
   }
 
-  const healthBeatInterval = setInterval(() => {
+  // Close sockets that never authenticate.
+  const authTimeout = setTimeout(() => {
+    if (!client.authenticated) ws.terminate()
+  }, AUTH_TIMEOUT_MS)
 
-    ws.send(
-      JSON.stringify(ping)
-    )
+  const healthBeatInterval = setInterval(() => {
+    if (ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify(ping))
   }, 30000)
 
   const healthCheckInterval = setInterval(() => {
@@ -143,7 +172,16 @@ wss.on("connection", (ws, req) => {
   const tunnelHealthInterval = setInterval(async () => {
     if (!client.authenticated || client.tunnelIds.length === 0) return
 
-    await refreshTunnelsTTL(client.tunnelIds)
+    // Catch errors, or an unhandled rejection crashes the relay.
+    try {
+      await checkTunnelsStillRegistered()
+    } catch (error) {
+      console.error("Tunnel health check failed:", error)
+    }
+  }, 60000)
+
+  async function checkTunnelsStillRegistered() {
+    await refreshTunnelsTTL(client.tunnelIds, ws)
 
     for (const tunnelId of client.tunnelIds) {
       const meta = await getTunnelMeta(tunnelId)
@@ -164,20 +202,17 @@ wss.on("connection", (ws, req) => {
       setTimeout(() => ws.close(), 100)
       return
     }
-  }, 60000)
+  }
 
-  ws.on("message", async (data) => {
-    client.lastPongAt = Date.now()
-
+  const handleMessage = async (message: any) => {
     try {
-      const message = JSON.parse(
-        data.toString()
-      )
-
       switch (message.type) {
         case "AUTH": {
+          if (client.authenticated) break
+
           const authMessage = message as AuthMessage
           const token = authMessage.token
+          if (typeof token !== "string") break
 
           const authLimit = await checkRateLimit(
             "auth:ip",
@@ -230,6 +265,7 @@ wss.on("connection", (ws, req) => {
             return
           }
 
+          clearTimeout(authTimeout)
           client.authenticated = true
           client.user = { userId, role: "user" }
           client.plan = plan
@@ -263,9 +299,14 @@ wss.on("connection", (ws, req) => {
               return
             }
 
-            const createTunnel = message as CreateTunnelMessage
+            const createMsg = message as CreateTunnelMessage
             const userId = client.user!.userId
-            const localPort = createTunnel.localPort
+            const localPort = createMsg.localPort
+
+            if (!isValidPort(localPort) || createMsg.protocol !== "http") {
+              console.warn(`Rejected CREATE_TUNNEL with invalid port/protocol from ${userId}`)
+              break
+            }
 
             const existing = await findTunnelByUserAndPort(userId, localPort)
 
@@ -296,34 +337,32 @@ wss.on("connection", (ws, req) => {
               break
             }
 
-            const activeTunnels = await countUserTunnels(userId);
-            const planLimits = getPlanLimits(client.plan);
+            const planLimits = getPlanLimits(client.plan)
+            const tunnelId = `tun_${randomUUID().replaceAll("-", "")}`
 
-            if (activeTunnels >= planLimits.activeTunnels) {
+            const tunnelMeta = await createTunnel(
+              {
+                tunnelId,
+                localPort,
+                protocol: createMsg.protocol,
+                ownerId: userId,
+                plan: client.plan,
+              },
+              ws,
+              planLimits.activeTunnels
+            )
+
+            if (!tunnelMeta) {
               const rateLimited: RateLimitedMessage = {
                 type: "RATE_LIMITED",
                 scope: "tunnel",
-                reason: `Active tunnel limit reached (${planLimits.activeTunnels} on the ${client.plan} plan).`
+                reason: `Active tunnel limit reached (${planLimits.activeTunnels} on the ${client.plan} plan). Port ${localPort} was not exposed.`
               }
               ws.send(JSON.stringify(rateLimited))
-              return
+              break
             }
 
-            const tunnelId = `tun_${randomUUID()}`.replaceAll("-","").slice(0, 16);
-            const subdomain = randomUUID().replaceAll("-", "").slice(0, 8)
-
-            const tunnelMeta = await registerTunnel(
-              {
-                tunnelId,
-                subdomain,
-                localPort: createTunnel.localPort,
-                protocol: createTunnel.protocol,
-                ownerId: client.user!.userId,
-                plan: client.plan,
-              },
-              ws
-            );
-
+            const subdomain = tunnelMeta.subdomain
             client.tunnelIds.push(tunnelId);
 
 
@@ -349,140 +388,21 @@ wss.on("connection", (ws, req) => {
             break
         }
 
-        case "HTTP_RESPONSE": {
-          if (
-            relayForwardResponse(
-              message.requestId,
-              message.status,
-              message.headers,
-              message.body
-            )
-          ) {
-            break
-          }
-
-          const pendingRequest = pendingRequests.get(message.requestId);
-          if(!pendingRequest) {
-            console.error(`No pending request found for requestId ${message.requestId}`);
-            return;
-          }
-
-          clearTimeout(pendingRequest.timeout)
-
-          const responseBytes = message.body
-            ? Buffer.byteLength(message.body, "utf8")
-            : 0
-
-          await recordBandwidth(
-            pendingRequest.ownerId,
-            pendingRequest.requestBytes + responseBytes
-          )
-
-          pendingRequest.reply.status(message.status).headers(message.headers).send(message.body);
-
-          pendingRequests.delete(message.requestId)
-
-          break;
-        }
-
-        case "HTTP_RESPONSE_START": {
-          if (
-            relayForwardResponseStart(
-              message.requestId,
-              message.status,
-              message.headers
-            )
-          ) {
-            break
-          }
-
-          let httpMessage = message as HttpResponseStartMessage
-          const pendingRequest = pendingRequests.get(httpMessage.requestId);
-
-          if(!pendingRequest){
-            console.error(`no pending request found for ${httpMessage.requestId}`);
-            return;
-          }
-
-          pendingRequest.reply.status(httpMessage.status).headers(httpMessage.headers);
-
-          break;
-
-        }
-
-        case "HTTP_RESPONSE_CHUNK": {
-
-          if (relayForwardResponseChunk(message.requestId, message.chunk)) {
-            break
-          }
-
-          let httpMessage = message as HttpResponseChunkMessage;
-          const pendingRequest = pendingRequests.get(httpMessage.requestId);
-
-          if(!pendingRequest){
-            return;
-          }
-
-          clearTimeout(
-            pendingRequest.timeout
-          )
-
-          pendingRequest.timeout = setTimeout(()=>{
-
-            const pending = pendingRequests.get(
-              httpMessage.requestId
-            )
-
-            if (!pending) return
-
-            pending.reply.status(504).send("Tunnel timeout")
-
-            pendingRequests.delete(
-              httpMessage.requestId
-            )
-
-          }, 30000)
-
-          const chunk = Buffer.from(httpMessage.chunk, "base64")
-
-          pendingRequest.reply.raw.write(chunk)
-          pendingRequest.responseBytes += chunk.length
-
-          break;
-
-        }
-
+        case "HTTP_RESPONSE":
+        case "HTTP_RESPONSE_START":
+        case "HTTP_RESPONSE_CHUNK":
         case "HTTP_RESPONSE_END": {
-          if (relayForwardResponseEnd(message.requestId)) {
-            break
-          }
-
-          let httpMessage = message as HttpResponseEndMessage;
-          const pendingRequest = pendingRequests.get(httpMessage.requestId);
-
-          if(!pendingRequest){
-            return;
-          }
-
-          clearTimeout(pendingRequest.timeout);
-
-          await recordBandwidth(
-            pendingRequest.ownerId,
-            pendingRequest.requestBytes + pendingRequest.responseBytes
-          )
-
-          pendingRequest.reply.raw.end();
-
-          pendingRequests.delete(httpMessage.requestId);
-
-          break;
+          // Only the agent a request was sent to may answer it.
+          if (!client.authenticated) break
+          await handleAgentResponse(ws, message)
+          break
         }
 
         case "PONG": {
           client.lastPongAt = Date.now()
 
           if (client.tunnelIds.length > 0) {
-            await refreshTunnelsTTL(client.tunnelIds)
+            await refreshTunnelsTTL(client.tunnelIds, ws)
           }
 
           break
@@ -513,17 +433,47 @@ wss.on("connection", (ws, req) => {
     } catch (error) {
       console.error("WebSocket message handler error:", error)
     }
+  }
+
+  // AUTH and CREATE_TUNNEL run one at a time, in order.
+  let controlQueue = Promise.resolve()
+
+  ws.on("message", (data) => {
+    client.lastPongAt = Date.now()
+
+    let message: any
+    try {
+      message = JSON.parse(data.toString())
+    } catch {
+      return
+    }
+
+    if (message?.type === "AUTH" || message?.type === "CREATE_TUNNEL") {
+      controlQueue = controlQueue.then(() => handleMessage(message))
+    } else {
+      void handleMessage(message)
+    }
   })
 
   ws.on("close", async () => {
 
+    clearTimeout(authTimeout);
     clearInterval(healthBeatInterval);
     clearInterval(healthCheckInterval);
     clearInterval(tunnelHealthInterval);
 
+    // Answer waiting visitors now instead of after the timeout.
+    failPendingRequestsFor(ws, "Tunnel disconnected")
+    failOutboundRequestsFor(ws, "Tunnel disconnected")
+
     for (const tunnelId of client.tunnelIds) {
-        await detachTunnel(tunnelId);
+      try {
+        // Pass ws so an old socket can't detach a reconnected tunnel.
+        await detachTunnel(tunnelId, ws);
         console.log(`Detached tunnel ${tunnelId} (kept in Redis for 24h)`);
+      } catch (error) {
+        console.error(`Failed to detach tunnel ${tunnelId}:`, error)
+      }
     }
     console.log(
       "Client disconnected"
@@ -539,6 +489,75 @@ wss.on("connection", (ws, req) => {
 })
 
 console.log(`Relay ${getRelayId()} listening on ws://0.0.0.0:${WS_PORT} and http://0.0.0.0:${HTTP_PORT}`)
+
+// Send an agent's response to the waiting visitor.
+async function handleAgentResponse(
+  ws: WebSocket,
+  message:
+    | HttpResponseMessage
+    | HttpResponseStartMessage
+    | HttpResponseChunkMessage
+    | HttpResponseEndMessage
+): Promise<void> {
+  // Request came from another relay: send it back there.
+  switch (message.type) {
+    case "HTTP_RESPONSE":
+      if (relayForwardResponse(ws, message.requestId, message.status, message.headers, message.body)) return
+      break
+    case "HTTP_RESPONSE_START":
+      if (relayForwardResponseStart(ws, message.requestId, message.status, message.headers)) return
+      break
+    case "HTTP_RESPONSE_CHUNK":
+      if (relayForwardResponseChunk(ws, message.requestId, message.chunk)) return
+      break
+    case "HTTP_RESPONSE_END":
+      if (relayForwardResponseEnd(ws, message.requestId)) return
+      break
+  }
+
+  // Request is waiting on this relay.
+  const pending = pendingRequests.get(message.requestId)
+  if (!pending || pending.ws !== ws) return
+
+  switch (message.type) {
+    case "HTTP_RESPONSE": {
+      clearTimeout(pending.timeout)
+      pendingRequests.delete(message.requestId)
+
+      const responseBytes = message.body
+        ? Buffer.byteLength(message.body, "utf8")
+        : 0
+
+      await recordBandwidth(pending.ownerId, pending.requestBytes + responseBytes)
+      sendFullReply(pending.reply, message.status, message.headers, message.body)
+      return
+    }
+
+    case "HTTP_RESPONSE_START": {
+      armPendingTimeout(message.requestId)
+      startStreamedReply(pending.reply, message.status, message.headers)
+      return
+    }
+
+    case "HTTP_RESPONSE_CHUNK": {
+      armPendingTimeout(message.requestId)
+
+      const chunk = Buffer.from(message.chunk, "base64")
+      pending.reply.raw.write(chunk)
+      pending.responseBytes += chunk.length
+      return
+    }
+
+    case "HTTP_RESPONSE_END": {
+      clearTimeout(pending.timeout)
+      pendingRequests.delete(message.requestId)
+
+      await recordBandwidth(pending.ownerId, pending.requestBytes + pending.responseBytes)
+      pending.reply.raw.end()
+      return
+    }
+  }
+}
 
 async function rejectBandwidthExceeded(tunnel: Tunnel, reply: any) {
   if (tunnel.ws.readyState === WebSocket.OPEN) {
@@ -569,8 +588,24 @@ const handler = async (req: any, reply: any) => {
     return;
   }
 
+  const tunnelId = tunnel?.tunnelId ?? meta!.tunnelId
   const ownerId = tunnel?.ownerId ?? meta!.ownerId
   const plan = tunnel?.plan ?? meta!.plan
+
+  // Same rate limit as the subdomain route.
+  const httpLimit = await checkRateLimit(
+    "http:tunnel",
+    tunnelId,
+    getPlanLimits(plan).httpPerMin,
+    60
+  )
+
+  if (!httpLimit.allowed) {
+    return reply
+      .status(429)
+      .header("Retry-After", retryAfterSeconds(httpLimit.resetAt))
+      .send("Rate limit exceeded for this tunnel")
+  }
 
   if (await isOverBandwidthQuota(ownerId, plan)) {
     if (tunnel) {
@@ -632,15 +667,14 @@ app.get("/auth/verify", async (req, reply) => {
 
 app.all("/*", async (req, reply) => {
   const host = req.headers.host;
-  console.log("host is >>", host);
 
   if (!host) {
     return reply
       .status(400)
       .send("Host header missing")
   }
-  const subdomain = host?.split(".")[0];
-  console.log("subdomain is: ",subdomain);
+  // Hostnames are case-insensitive; subdomains are stored lowercase.
+  const subdomain = host.split(".")[0].toLowerCase();
 
   const tunnel = await resolveTunnelBySubdomain(subdomain!)
 
@@ -721,8 +755,15 @@ async function shutdown(signal: string) {
 
   console.log(`${signal} received — shutting down relay ${getRelayId()}`)
 
+  // Ask agents to reconnect to another relay now.
+  for (const socket of wss.clients) {
+    socket.close(1001, "Relay shutting down")
+  }
+
   wss.close()
   await app.close()
+  // Let close handlers update Redis first.
+  await new Promise((resolve) => setTimeout(resolve, 500))
   await disconnectPubSub()
   await disconnectRedis()
 
