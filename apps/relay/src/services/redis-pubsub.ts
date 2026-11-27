@@ -1,4 +1,4 @@
-import Redis from "ioredis"
+import { Redis } from "ioredis"
 
 let publisher: Redis | null = null
 let subscriber: Redis | null = null
@@ -44,7 +44,10 @@ export function publish(channel: string, payload: string): void {
     throw new Error("Pub/sub not connected. Call connectPubSub() first.")
   }
 
-  void publisher.publish(channel, payload)
+  // Catch errors, or an unhandled rejection crashes the relay.
+  publisher.publish(channel, payload).catch((err: Error) => {
+    console.error(`Redis publish to ${channel} failed:`, err.message)
+  })
 }
 
 export async function disconnectPubSub(): Promise<void> {

@@ -9,10 +9,13 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # Localhost only: Redis has no password.
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    # Without this Redis stays down after a reboot and relays crash-loop.
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

@@ -9,6 +9,7 @@ export interface RelayHttpRequestMessage {
   path: string
   headers: Record<string, string>
   body?: string
+  bodyBase64?: string
   ownerId: string
 }
 
@@ -16,7 +17,7 @@ export interface RelayHttpResponseMessage {
   type: "RELAY_HTTP_RESPONSE"
   requestId: string
   status: number
-  headers: Record<string, string>
+  headers: Record<string, string | string[]>
   body?: string
 }
 
@@ -24,7 +25,7 @@ export interface RelayHttpResponseStartMessage {
   type: "RELAY_HTTP_RESPONSE_START"
   requestId: string
   status: number
-  headers: Record<string, string>
+  headers: Record<string, string | string[]>
 }
 
 export interface RelayHttpResponseChunkMessage {

@@ -58,14 +58,17 @@ export interface HttpRequestMessage{
   method: string,
   path: string,
   headers: Record<string, string>,
+  // Text body.
   body?: string
+  // Binary body (base64). Used instead of `body`.
+  bodyBase64?: string
 }
 
 export interface HttpResponseMessage {
   type: "HTTP_RESPONSE",
   requestId: string,
   status: number,
-  headers: Record<string, string>,
+  headers: Record<string, string | string[]>,
   body?: string
 }
 
@@ -81,7 +84,8 @@ export interface HttpResponseStartMessage {
   type: "HTTP_RESPONSE_START"
   requestId: string
   status: number
-  headers: Record<string, string>
+  // Arrays for repeated headers like set-cookie.
+  headers: Record<string, string | string[]>
 }
 
 export interface HttpResponseChunkMessage {

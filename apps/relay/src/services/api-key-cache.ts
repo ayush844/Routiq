@@ -17,10 +17,8 @@ export async function lookupApiKeyCache(
   if (raw === null) return "miss";
   if (raw === "0") return "invalid";
 
-  const user = JSON.parse(raw) as ApiKeyUser;
-  await getRedis().expire(cacheKey(keyHash), CACHE_TTL_SECONDS);
-
-  return user;
+  // Don't refresh the TTL, or a revoked key stays valid forever.
+  return JSON.parse(raw) as ApiKeyUser;
 }
 
 export async function cacheApiKeyUser(

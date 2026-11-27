@@ -1,16 +1,46 @@
 import { randomUUID } from "crypto"
+import { WebSocket } from "ws"
+import { HttpRequestMessage } from "@routiq/shared"
 import { Tunnel } from "../types/relay.js"
 import { pendingRequests } from "../stores/requests.js"
+import { REQUEST_TIMEOUT_MS } from "../config/limits.js"
+import {
+  encodeRequestBody,
+  estimateRequestBytes,
+  failReply,
+  requestPath,
+} from "./proxy-helpers.js"
 
-export function estimateRequestBytes(req: any, body?: string): number {
-  let size = body ? Buffer.byteLength(body, "utf8") : 0
+export { estimateRequestBytes } from "./proxy-helpers.js"
 
-  const contentLength = req.headers["content-length"]
-  if (contentLength) {
-    size = Math.max(size, parseInt(contentLength, 10) || 0)
+function pendingTimeout(requestId: string): NodeJS.Timeout {
+  return setTimeout(() => {
+    const pending = pendingRequests.get(requestId)
+    if (!pending) return
+
+    pendingRequests.delete(requestId)
+    failReply(pending.reply, 504, "Tunnel timeout")
+  }, REQUEST_TIMEOUT_MS)
+}
+
+// Restart the timeout (called on every chunk).
+export function armPendingTimeout(requestId: string): void {
+  const pending = pendingRequests.get(requestId)
+  if (!pending) return
+
+  clearTimeout(pending.timeout)
+  pending.timeout = pendingTimeout(requestId)
+}
+
+// Fail all requests waiting on this agent.
+export function failPendingRequestsFor(ws: WebSocket, reason: string): void {
+  for (const [requestId, pending] of pendingRequests) {
+    if (pending.ws !== ws) continue
+
+    clearTimeout(pending.timeout)
+    pendingRequests.delete(requestId)
+    failReply(pending.reply, 502, reason)
   }
-
-  return size + 500
 }
 
 export async function forwardRequest(
@@ -18,52 +48,48 @@ export async function forwardRequest(
   req: any,
   reply: any
 ) {
+  if (tunnel.ws.readyState !== WebSocket.OPEN) {
+    return reply
+      .status(503)
+      .send("Tunnel offline — run routiq http to reconnect")
+  }
+
   const requestId = randomUUID()
-
-  const timeout = setTimeout(() => {
-    const pending = pendingRequests.get(requestId)
-
-    if (!pending) return
-
-    pending.reply.status(504).send("Tunnel timeout")
-
-    pendingRequests.delete(requestId)
-  }, 30000)
-
-  const body = req.body ? JSON.stringify(req.body) : undefined
-  const requestBytes = estimateRequestBytes(req, body)
+  const encoded = encodeRequestBody(req.body)
 
   pendingRequests.set(requestId, {
     reply,
-    timeout,
+    ws: tunnel.ws,
+    timeout: pendingTimeout(requestId),
     createdAt: Date.now(),
     ownerId: tunnel.ownerId,
-    requestBytes,
+    requestBytes: estimateRequestBytes(req.headers, encoded.bytes),
     responseBytes: 0,
   })
 
-  const path = req.params?.tunnelId ? req.url.replace(`/test/${req.params.tunnelId}`,"") || "/" : req.url
+  // Visitor left: forget the request.
+  reply.raw.on("close", () => {
+    if (reply.raw.writableFinished) return
 
-  const ws = tunnel.ws;
+    const pending = pendingRequests.get(requestId)
+    if (!pending) return
 
-  ws.send(
-    JSON.stringify({
-      type: "HTTP_REQUEST",
+    clearTimeout(pending.timeout)
+    pendingRequests.delete(requestId)
+  })
 
-      requestId,
+  const message: HttpRequestMessage = {
+    type: "HTTP_REQUEST",
+    requestId,
+    tunnelId: tunnel.tunnelId,
+    method: req.method,
+    path: requestPath(req),
+    headers: req.headers,
+    body: encoded.body,
+    bodyBase64: encoded.bodyBase64,
+  }
 
-      tunnelId: tunnel.tunnelId,
+  tunnel.ws.send(JSON.stringify(message))
 
-      method: req.method,
-
-      path: path,
-
-      headers: req.headers,
-
-      body
-    })
-  )
-
-  return reply;
-
+  return reply
 }

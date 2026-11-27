@@ -23,6 +23,10 @@ export type TunnelMeta = {
   plan: string
   relayId: string
   createdAt: number
+  // False after the agent disconnects (record kept for reconnect).
+  connected?: boolean
+  // Last heartbeat; stale tunnels don't count toward the plan limit.
+  lastSeenAt?: number
 }
 
 export type Tunnel = TunnelMeta & {
@@ -36,6 +40,8 @@ export type TunnelParams = {
 
 export type PendingRequest = {
   reply: FastifyReply
+  // Agent socket the request was sent to.
+  ws: WebSocket
   timeout: NodeJS.Timeout
   createdAt: number
   ownerId: string
